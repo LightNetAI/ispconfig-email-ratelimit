@@ -1,0 +1,64 @@
+# email_ratelimit extension file list
+#
+# Format: <action>:<source relative to the extension dir>:<target relative to /usr/local/ispconfig>
+#   c = copy (regular file, chmod 640, chown root:root or ispconfig:ispconfig)
+#   s = symlink
+#   d = create directory
+#
+# Source and target are checked by the framework, the source must stay inside
+# the extension directory and the target inside /usr/local/ispconfig.
+
+# --- server side ------------------------------------------------------------
+
+# The enforcement module and its configuration generator.
+c:server/lua/email_ratelimit.lua:server/lua/email_ratelimit.lua
+c:server/lib/classes/email_ratelimit_sync.inc.php:server/lib/classes/email_ratelimit_sync.inc.php
+
+# Plugin and module for the server process. Symlinked into the enabled folders
+# so the ISPConfig update process (which rebuilds those links) keeps them.
+s:server/plugins-available/email_ratelimit_plugin.inc.php:server/plugins-available/email_ratelimit_plugin.inc.php
+s:server/plugins-available/email_ratelimit_plugin.inc.php:server/plugins-enabled/email_ratelimit_plugin.inc.php
+s:server/mods-available/email_ratelimit_module.inc.php:server/mods-available/email_ratelimit_module.inc.php
+s:server/mods-available/email_ratelimit_module.inc.php:server/mods-enabled/email_ratelimit_module.inc.php
+
+# Cron safety net.
+c:server/lib/classes/cron.d/100-email_ratelimit.inc.php:server/lib/classes/cron.d/100-email_ratelimit.inc.php
+
+# --- interface (panel) ------------------------------------------------------
+
+# External rate limit CRUD pages.
+c:interface/web/mail/email_ratelimit_list.php:interface/web/mail/email_ratelimit_list.php
+c:interface/web/mail/email_ratelimit_edit.php:interface/web/mail/email_ratelimit_edit.php
+c:interface/web/mail/email_ratelimit_del.php:interface/web/mail/email_ratelimit_del.php
+c:interface/web/mail/form/email_ratelimit.tform.php:interface/web/mail/form/email_ratelimit.tform.php
+c:interface/web/mail/list/email_ratelimit.list.php:interface/web/mail/list/email_ratelimit.list.php
+
+# Panel templates.
+c:interface/web/mail/templates/email_ratelimit_list.htm:interface/web/mail/templates/email_ratelimit_list.htm
+c:interface/web/mail/templates/email_ratelimit_edit.htm:interface/web/mail/templates/email_ratelimit_edit.htm
+
+# Menu entry: the panel scans */lib/menu.d/*.menu.php of every module.
+c:interface/web/mail/lib/menu.d/email_ratelimit.menu.php:interface/web/mail/lib/menu.d/email_ratelimit.menu.php
+
+# Directories that do not exist in a stock ISPConfig install.
+d:interface/web/mail/lib/plugin.d:interface/web/mail/lib/plugin.d
+d:interface/web/admin/lib/plugin.d:interface/web/admin/lib/plugin.d
+d:interface/web/themes/default/templates/mail:interface/web/themes/default/templates/mail
+d:interface/web/themes/default/templates/admin:interface/web/themes/default/templates/admin
+
+# Form plugins: inject the tab fields into the core forms and persist them.
+c:interface/web/mail/lib/plugin.d/email_ratelimit_domain.inc.php:interface/web/mail/lib/plugin.d/email_ratelimit_domain.inc.php
+c:interface/web/mail/lib/plugin.d/email_ratelimit_user.inc.php:interface/web/mail/lib/plugin.d/email_ratelimit_user.inc.php
+c:interface/web/admin/lib/plugin.d/email_ratelimit_server.inc.php:interface/web/admin/lib/plugin.d/email_ratelimit_server.inc.php
+
+# Language files (own files only - never override a core .lng, an uninstall
+# removes copied files and that would delete core content).
+c:interface/web/mail/lib/lang/en_email_ratelimit.lng:interface/web/mail/lib/lang/en_email_ratelimit.lng
+c:interface/web/mail/lib/lang/en_email_ratelimit_list.lng:interface/web/mail/lib/lang/en_email_ratelimit_list.lng
+
+# Theme template overrides: the template search looks in
+# themes/<theme>/templates/<module>/<file>.htm before the core path, so adding
+# the rate limit controls to existing forms needs no change to core files.
+c:interface/web/themes/default/templates/admin/server_config_mail_edit.htm:interface/web/themes/default/templates/admin/server_config_mail_edit.htm
+c:interface/web/themes/default/templates/mail/mail_domain_edit.htm:interface/web/themes/default/templates/mail/mail_domain_edit.htm
+c:interface/web/themes/default/templates/mail/mail_user_mailbox_edit.htm:interface/web/themes/default/templates/mail/mail_user_mailbox_edit.htm

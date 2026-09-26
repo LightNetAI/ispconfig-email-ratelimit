@@ -1,0 +1,21 @@
+<?php
+// Ratelimit - explicit external rate limits
+$wb['list_head_txt'] = 'Ratelimit';
+$wb['list_desc_txt'] = 'Additional rate limits for individual external domains or addresses. These override the limits defined for a domain or mailbox.';
+$wb['toolsarea_head_txt'] = 'Tools';
+
+$wb['server_id_txt'] = 'Server';
+$wb['source_txt'] = 'Source';
+$wb['source_note_txt'] = 'A domain (@example.com) or a single address (user@example.com)';
+$wb['type_txt'] = 'Type';
+$wb['interval_txt'] = 'Ratelimit Interval';
+$wb['limit_txt'] = 'Ratelimit Mails';
+$wb['active_txt'] = 'Active';
+
+$wb['source_error_empty'] = 'Source is empty.';
+$wb['source_error_regex'] = 'Invalid source. Use @example.com or user@example.com';
+$wb['limit_error_empty'] = 'Ratelimit Mails is empty.';
+$wb['limit_error_regex'] = 'Ratelimit Mails must be a number.';
+
+$wb['yes_txt'] = 'Yes';
+$wb['no_txt'] = 'No';

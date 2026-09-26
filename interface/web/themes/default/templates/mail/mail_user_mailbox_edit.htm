@@ -1,0 +1,175 @@
+            <div class="form-group">
+                <label for="name" class="col-sm-3 control-label">{tmpl_var name='name_txt'}</label>
+                <div class="col-sm-6"><input type="text" name="name" id="name" value="{tmpl_var name='name'}" class="form-control" autofocus /></div><div class="col-sm-3 input-sm"> &nbsp; {tmpl_var name='name_optional_txt'}
+            </div></div>
+			<div class="form-group">
+                <label class="col-sm-3 control-label"><em>*</em> {tmpl_var name='email_txt'}</label>
+                <div class="col-sm-9">
+				    <div class='input-group'>
+                        <input type="text" id="email_local_part" name="email_local_part" value="{tmpl_var name='email_local_part'}" class="form-control" onpaste="processEmailAddressInput(this)" onchange="updateEmailDomain(this)" />
+						<span class='input-group-addon'>@</span>
+                        <div class='input-group-field'>
+							<select name="email_domain" id="email_domain" class="form-control" style="height:50px;min-width:170px;">{tmpl_var name='email_domain'}</select>
+                        </div>
+                        <div class="input-group-field">
+                          <a class="btn btn-default formbutton-narrow" href="javascript: navigator.clipboard.writeText(document.getElementById('email_local_part').value + '@' + getEmailDomain(document.getElementById('email_domain')));" title="">
+                            <span class="fa fa-clone"></span>
+                          </a>
+                        </div>
+                    </div>
+                    <tmpl_if name="mail_addresses">{tmpl_var name='mail_addresses_txt'}: <tmpl_loop name="mail_addresses">{tmpl_var name='source'} ({tmpl_var name='type'})<tmpl_unless name="__LAST__">, </tmpl_unless></tmpl_loop></tmpl_if>
+                </div>
+            </div>
+            <tmpl_if name="enable_custom_login"><div class="form-group">
+                    <label for="login" class="col-sm-3 control-label">{tmpl_var name='login_txt'}</label>
+                    <div class="col-sm-9"><input type="text" id="login" name="login" value="{tmpl_var name='login'}" class="form-control" /></div></label>
+                </div></tmpl_if>
+            <div class="form-group">
+                <label for="password" class="col-sm-3 control-label">{tmpl_var name='password_txt'}</label>
+                <div class="col-sm-9">
+				<div class="input-group">
+					<input type="password" name="password" id="password" value="{tmpl_var name='password'}" title="{tmpl_var name='password_click_to_set_txt'}" class="form-control" autocomplete="off" onkeyup="pass_check(this.value);checkPassMatch('password','repeat_password');" />
+					<span class="input-group-btn">
+						<button class="btn btn-default" type="button" onclick="generatePassword('password','repeat_password');">{tmpl_var name='generate_password_txt'}</button>
+					</span>
+				</div>
+				</div>
+            </div>
+            <div class="form-group">
+                <label class="col-sm-3 control-label">{tmpl_var name='password_strength_txt'}</label>
+                <div class="col-sm-9 checkbox">
+                <div id="passBar"></div>
+                <span id="passText">&nbsp;</span>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="repeat_password" class="col-sm-3 control-label">{tmpl_var name='repeat_password_txt'}</label>
+                <div class="col-sm-9">
+                       <input type="password" name="repeat_password" id="repeat_password" value="" title="{tmpl_var name='password_click_to_set_txt'}" class="form-control" autocomplete="off" onkeyup="checkPassMatch('password','repeat_password');" />
+                       <tmpl_if name="mailbox_show_last_access" op="==" value="y"><tmpl_if name="id">{tmpl_var name='last_accessed_txt'}: {tmpl_var name='last_access'}</tmpl_if></tmpl_if>
+                </div>
+            </div>
+            <div class="form-group">
+				<div class="col-sm-offset-3 col-sm-9">
+					<div id="confirmpasswordError" style="display:none;" class="confirmpassworderror">{tmpl_var name='password_mismatch_txt'}</div>
+					<div id="confirmpasswordOK" style="display:none;" class="confirmpasswordok">{tmpl_var name='password_match_txt'}</div>
+				</div>
+			</div>
+            <div class="form-group">
+                <label for="quota" class="col-sm-3 control-label">{tmpl_var name='quota_txt'}</label>
+                <div class="col-sm-9"><div class="input-group"><input type="text" name="quota" id="quota" value="{tmpl_var name='quota'}" class="form-control" aria-describedby="quota-desc" /><span class="input-group-addon" id="quota-desc">MB</span></div>
+                <tmpl_if name='id'>
+                {tmpl_if name="quota" op="!=" value="0"}
+                <div class='progress'>
+                    <div class='progress-bar-striped progress-bar progress-bar-{tmpl_if name="used_percentage" op="<" value="50"}success{tmpl_elseif name="used_percentage" op="<" value="75"}warning{tmpl_else}danger{/tmpl_if}' role='progressbar' aria-valuemin='0' aria-valuemax='100' aria-valuenow='{tmpl_var name="used_percentage"}' style='width:{tmpl_var name="used_percentage"}%'><span>{tmpl_var name='used_txt'}: {tmpl_var name='used'} / {tmpl_var name="used_percentage"}%</span>
+                    <span class='sr-only'>{tmpl_var name='used'} {tmpl_var name='of_txt'} {tmpl_var name='quota'}</span>
+                    </div>
+                 </div>
+                {tmpl_else}{tmpl_var name='used_txt'}: {tmpl_var name='used'}{/tmpl_if}
+                </tmpl_if>
+              </div>
+            </div>
+            <div class="form-group">
+                <label for="name" class="col-sm-3 control-label">{tmpl_var name='cc_txt'}</label>
+                <div class="col-sm-6"><input type="text" name="cc" id="cc" value="{tmpl_var name='cc'}" class="form-control" /></div><div class="col-sm-3 input-sm"> &nbsp; {tmpl_var name='name_optional_txt'} {tmpl_var name='cc_note_txt'}
+            </div></div>
+            <div class="form-group">
+                <label class="col-sm-3 control-label">{tmpl_var name='forward_in_lda_txt'}</label>
+                <div class="col-sm-9">
+                    <a data-toggle="tooltip" title="{tmpl_var name='tooltip_forward_in_lda_txt'}">{tmpl_var name='forward_in_lda'}</a>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="sender_name" class="col-sm-3 control-label">{tmpl_var name='sender_cc_txt'}</label>
+                <div class="col-sm-6"><input type="text" name="sender_cc" id="sender_cc" value="{tmpl_var name='sender_cc'}" class="form-control" /></div><div class="col-sm-3 input-sm"> &nbsp; {tmpl_var name='name_optional_txt'} {tmpl_var name='sender_cc_note_txt'}
+            </div></div>
+            <tmpl_if name="is_admin"><div class="form-group">
+                <label for="imap_prefix" class="col-sm-3 control-label">{tmpl_var name='imap_prefix_txt'}</label>
+                <div class="col-sm-6">
+                    <input type="text" name="imap_prefix" id="imap_prefix" value="{tmpl_var name='imap_prefix'}" data-toggle="tooltip" title="{tmpl_var name='tooltip_imap_prefix_txt'}" class="form-control" />
+                </div><div class="col-sm-3 input-sm"> &nbsp; {tmpl_var name='name_optional_txt'}</div>
+            </div></tmpl_if>
+            <div class="form-group">
+                <label for="policy" class="col-sm-3 control-label">{tmpl_var name='policy_txt'}</label>
+                <div class="col-sm-9"><select name="policy" id="policy" class="form-control">
+                    {tmpl_var name='policy'}
+                </select></div>
+            </div>
+            <div class="form-group">
+                <label class="col-sm-3 control-label">{tmpl_var name='postfix_txt'}</label>
+                <div class="col-sm-9">
+                    <a data-toggle="tooltip" title="{tmpl_var name='tooltip_postfix_txt'}">{tmpl_var name='postfix'}</a>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="col-sm-3 control-label">{tmpl_var name='disablesmtp_txt'}</label>
+                <div class="col-sm-9">
+                    <a data-toggle="tooltip" title="{tmpl_var name='tooltip_disablesmtp_txt'}">{tmpl_var name='disablesmtp'}</a>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="col-sm-3 control-label">{tmpl_var name='disabledeliver_txt'}</label>
+                <div class="col-sm-9">
+                    <a data-toggle="tooltip" title="{tmpl_var name='tooltip_disabledeliver_txt'}">{tmpl_var name='disabledeliver'}</a>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="col-sm-3 control-label">{tmpl_var name='greylisting_txt'}</label>
+                <div class="col-sm-9">
+                    {tmpl_var name='greylisting'}
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="col-sm-3 control-label">{tmpl_var name='disableimap_txt'}</label>
+                <div class="col-sm-9">
+                    {tmpl_var name='disableimap'}
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="col-sm-3 control-label">{tmpl_var name='disablepop3_txt'}</label>
+                <div class="col-sm-9">
+                    {tmpl_var name='disablepop3'}
+                </div>
+            </div>
+
+            <div class="col-sm-12" style="padding:0"><button class="btn btn-default formbutton-default" type="button" data-toggle="collapse" data-target="#toggle-ratelimit" aria-expanded="false" aria-controls="toggle-ratelimit">{tmpl_var name='erl_settings_txt'}</button></div>
+            <div id="toggle-ratelimit" class="collapse">
+              <div class="form-group">
+                <label for="erl_limit_mode" class="col-sm-3 control-label">{tmpl_var name='erl_limit_mode_txt'}</label>
+                <div class="col-sm-9"><select name="erl_limit_mode" id="erl_limit_mode" class="form-control">
+                    {tmpl_var name='erl_limit_mode'}
+                </select></div>
+              </div>
+              <div class="form-group">
+                <label for="erl_out_interval" class="col-sm-3 control-label">{tmpl_var name='erl_out_interval_txt'}</label>
+                <div class="col-sm-9"><select name="erl_out_interval" id="erl_out_interval" class="form-control">
+                    {tmpl_var name='erl_out_interval'}
+                </select></div>
+              </div>
+              <div class="form-group">
+                <label for="erl_out_limit" class="col-sm-3 control-label">{tmpl_var name='erl_out_limit_txt'}</label>
+                <div class="col-sm-9"><input type="text" name="erl_out_limit" id="erl_out_limit" value="{tmpl_var name='erl_out_limit'}" class="form-control" /></div>
+              </div>
+              <div class="form-group">
+                <label for="erl_in_interval" class="col-sm-3 control-label">{tmpl_var name='erl_in_interval_txt'}</label>
+                <div class="col-sm-9"><select name="erl_in_interval" id="erl_in_interval" class="form-control">
+                    {tmpl_var name='erl_in_interval'}
+                </select></div>
+              </div>
+              <div class="form-group">
+                <label for="erl_in_limit" class="col-sm-3 control-label">{tmpl_var name='erl_in_limit_txt'}</label>
+                <div class="col-sm-9"><input type="text" name="erl_in_limit" id="erl_in_limit" value="{tmpl_var name='erl_in_limit'}" class="form-control" /></div>
+              </div>
+            </div>
+
+        <input type="hidden" name="id" value="{tmpl_var name='id'}">
+
+        <div class="clear">
+            <tmpl_if name='id'><tmpl_if name='show_delete_on_forms' op="==" value="y">
+                <a class="btn btn-default formbutton-danger formbutton-narrow" href="javascript: ISPConfig.confirm_action('mail/mail_user_del.php?id={tmpl_var name='id'}&_csrf_id={tmpl_var name='_csrf_id'}&_csrf_key={tmpl_var name='_csrf_key'}&phpsessid={tmpl_var name='phpsessid'}','{tmpl_var name='delete_confirmation'}');"><span class="icon icon-delete"></span></a>
+            </tmpl_if></tmpl_if>
+            <div class="right">
+                <button class="btn btn-default formbutton-success" type="button" value="{tmpl_var name='btn_save_txt'}" data-submit-form="pageForm" data-form-action="mail/mail_user_edit.php">{tmpl_var name='btn_save_txt'}</button>
+                <button class="btn btn-default formbutton-default" type="button" value="{tmpl_var name='btn_cancel_txt'}" data-load-content="mail/mail_user_list.php">{tmpl_var name='btn_cancel_txt'}</button>
+            </div>
+	</div>

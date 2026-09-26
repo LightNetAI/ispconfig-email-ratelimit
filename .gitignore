@@ -1,0 +1,8 @@
+# installer shadow copies
+*.email_ratelimit.bak
+*.tmp
+
+# editor / OS
+.DS_Store
+*.swp
+*~

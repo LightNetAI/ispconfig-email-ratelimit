@@ -1,0 +1,14 @@
+<?php
+// Ratelimit list
+$wb['list_head_txt'] = 'Ratelimit';
+$wb['list_desc_txt'] = 'Additional rate limits for individual external domains or addresses.';
+$wb['add_new_record_txt'] = 'Add Ratelimit';
+$wb['server_id_txt'] = 'Server';
+$wb['source_txt'] = 'Source';
+$wb['type_txt'] = 'Type';
+$wb['interval_txt'] = 'Ratelimit Interval';
+$wb['limit_txt'] = 'Ratelimit Mails';
+$wb['active_txt'] = 'Active';
+$wb['filter_txt'] = 'Filter';
+$wb['yes_txt'] = 'Yes';
+$wb['no_txt'] = 'No';

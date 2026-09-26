@@ -1,0 +1,4 @@
+# Tables of this extension that the server processes of slave servers may read
+# from the master database through their ispcsrv<id> MySQL user.
+# See ISPConfig docs/extensions/master_grants.md
+email_ratelimit:SELECT
