@@ -22,6 +22,17 @@ if(PHP_SAPI !== 'cli') die("This script must be run from the command line.\n");
 function erl_say($msg) { echo '  ' . $msg . "\n"; }
 
 /**
+ * Point at the path that still works when this script cannot: a standalone
+ * cleanup that needs no ISPConfig bootstrap and no database.
+ */
+function erl_recover_hint() {
+	echo "\nThe installation is now in an unknown state. To clean it up without\n";
+	echo "relying on this script or the ISPConfig bootstrap, run:\n\n";
+	echo "  php " . __DIR__ . "/rescue.php          # preview\n";
+	echo "  php " . __DIR__ . "/rescue.php --yes    # apply\n\n";
+}
+
+/**
  * Run a .sql file through an ISPConfig db handle.
  *
  * The files contain plain DDL, one or more statements separated by ';'.
@@ -157,12 +168,16 @@ switch($action) {
 		if(!$installer->$action()) {
 			echo "FAILED during installer->$action()\n";
 			foreach($installer->messages as $m) erl_say($m);
+			erl_recover_hint();
 			exit(1);
 		}
 
 		if($action === 'install') {
 			erl_say('install_master.sql (master database)');
-			if(!erl_sql($app->dbmaster, __DIR__ . '/install_master.sql')) exit(1);
+			if(!erl_sql($app->dbmaster, __DIR__ . '/install_master.sql')) {
+				erl_recover_hint();
+				exit(1);
+			}
 
 			//* Verify the table really exists - "the deployer said OK" is not
 			//  evidence, and everything downstream depends on this table.
@@ -171,6 +186,7 @@ switch($action) {
 				 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'email_ratelimit'");
 			if(!is_array($row) || empty($row['cnt'])) {
 				fwrite(STDERR, "ERROR: table email_ratelimit was not created\n");
+				erl_recover_hint();
 				exit(1);
 			}
 			erl_say('table email_ratelimit created/verified');
@@ -198,9 +214,20 @@ switch($action) {
 
 	case 'uninstall':
 		erl_say('installer->uninstall()');
-		if(!$installer->uninstall()) { echo "FAILED\n"; exit(1); }
+		$uninstall_ok = $installer->uninstall();
+
+		//* Drop the table even when the installer reported problems: an orphan
+		//  table is worse than a partially clean uninstall, and this statement
+		//  is idempotent.
 		erl_say('uninstall_master.sql (master database)');
-		if(!erl_sql($app->dbmaster, __DIR__ . '/uninstall_master.sql')) exit(1);
+		if(!erl_sql($app->dbmaster, __DIR__ . '/uninstall_master.sql')) $uninstall_ok = false;
+
+		if(!$uninstall_ok) {
+			echo "FAILED during uninstall\n";
+			foreach($installer->messages as $m) erl_say($m);
+			erl_recover_hint();
+			exit(1);
+		}
 		break;
 }
 

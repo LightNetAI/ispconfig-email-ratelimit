@@ -163,11 +163,39 @@ php install/deploy.php uninstall   # remove files, columns and the table
 include line. It **never touches core files** — the language and template
 overrides are all new files of its own.
 
+Two details that matter if you had customised a template before installing: a
+file that was shadow-copied to `<file>.email_ratelimit.bak` is **restored**, not
+deleted, and Rspamd is reloaded immediately so an uninstall actually stops
+enforcement (a delayed reload would never be drained by a CLI run).
+
 Redis counters are left behind (harmless, they expire); clear them with:
 
 ```bash
 redis-cli --scan --pattern 'erl:*' | xargs -r redis-cli del
 ```
+
+### If the install fails part way
+
+An install can stop between adding columns and writing the Rspamd
+configuration, or the extension's own PHP can be the broken part. `uninstall`
+is written to survive that, but it still needs the ISPConfig bootstrap and a
+working database. `install/rescue.php` needs neither — only PHP and root:
+
+```bash
+php install/rescue.php          # preview, changes nothing
+php install/rescue.php --yes    # apply
+```
+
+It removes the `rspamd.local.lua` block first and aborts without deleting
+anything if that fails (deleting the files while Rspamd still `dofile()`s them
+would stop Rspamd from starting). Then it deletes the generated files, removes
+the deployed files — restoring any `.email_ratelimit.bak` — drops the `erl_*`
+columns and the table when the database is reachable, and reloads Rspamd.
+
+It also works when the extension directory is half-extracted: if
+`install/file.list` is missing it falls back to a built-in list of the files it
+deploys. `--no-db` and `--no-reload` skip the last two steps. Exit code is `0`
+only when everything succeeded, and it is safe to run twice.
 
 ## Troubleshooting
 
@@ -263,7 +291,8 @@ for c in global_out override_only override_in extern_out extern_out_dedupe \
   lua5.1 tests/ratelimit_spec.lua "$c" server/lua/email_ratelimit.lua || exit 1
 done
 
-php tests/test_installer_php.php   # SQL loader + rspamd.local.lua block handling
+php tests/test_installer_php.php   # SQL loader, rspamd.local.lua block, idempotency
+php tests/test_rescue_php.php      # standalone cleanup: restore, abort path, dry run
 ```
 
 The Lua tests pin the behaviour that matters: the Redis call shape (`keys` vs
