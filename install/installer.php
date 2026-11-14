@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/rspamd_block.inc.php';
+
 /*
  * email_ratelimit - ISPConfig 3.3 extension installer
  *
@@ -106,8 +108,10 @@ class email_ratelimit_installer extends extension_installer_base {
 	}
 
 	private function drop_column($db, $table, $column) {
-		if(!$this->table_exists($db, $table)) return false;
-		if(!$this->column_exists($db, $table, $column)) return false;
+		//* nothing to drop is success: uninstall is idempotent and has to work
+		//  after an install that stopped before adding every column
+		if(!$this->table_exists($db, $table)) return true;
+		if(!$this->column_exists($db, $table, $column)) return true;
 		$res = $db->query("ALTER TABLE `" . $table . "` DROP COLUMN `" . $column . "`");
 		if($res === false) {
 			$this->messages[] = "ERROR: cannot drop column $table.$column" . $this->db_error($db);
@@ -142,12 +146,13 @@ class email_ratelimit_installer extends extension_installer_base {
 	private function drop_core_columns() {
 		$db = $this->db();
 		if($db === null) return false;
+		$ok = true;
 		foreach($this->core_columns as $table => $columns) {
 			foreach($columns as $column => $ddl) {
-				$this->drop_column($db, $table, $column);
+				if(!$this->drop_column($db, $table, $column)) $ok = false;
 			}
 		}
-		return true;
+		return $ok;
 	}
 
 	//* ------------------------------------------------------------ file deploy
@@ -248,13 +253,21 @@ class email_ratelimit_installer extends extension_installer_base {
 			}
 
 			if($reverse) {
+				$bak = $abs . '.email_ratelimit.bak';
+				// If a previous install shadow-copied a file that already existed
+				// (e.g. a themed template), put the original back instead of
+				// deleting both copies - uninstalling must not eat the admin's
+				// customisation.
+				if(file_exists($bak)) {
+					if(@rename($bak, $abs)) {
+						$this->messages[] = "restored $target from backup";
+					} else {
+						$this->messages[] = "ERROR: cannot restore $target from backup";
+					}
+					continue;
+				}
 				if((is_link($abs) || is_file($abs)) && @unlink($abs)) {
 					$this->messages[] = "removed $target";
-				}
-				// clean up the shadow copy a previous install may have left
-				if(file_exists($abs . '.email_ratelimit.bak')) {
-					@unlink($abs . '.email_ratelimit.bak');
-					$this->messages[] = "removed $target.email_ratelimit.bak";
 				}
 				continue;
 			}
@@ -324,6 +337,8 @@ class email_ratelimit_installer extends extension_installer_base {
 			return false;
 		}
 
+		$this->reload_rspamd_now();
+
 		return true;
 	}
 
@@ -331,7 +346,9 @@ class email_ratelimit_installer extends extension_installer_base {
 
 	public function enable() {
 		$this->register_rspamd_include();
-		return $this->sync_now();
+		if(!$this->sync_now()) return false;
+		$this->reload_rspamd_now();
+		return true;
 	}
 
 	//* ------------------------------------------------------------------ disable
@@ -344,8 +361,8 @@ class email_ratelimit_installer extends extension_installer_base {
 		$app->uses('email_ratelimit_sync');
 		if(isset($app->email_ratelimit_sync) && is_object($app->email_ratelimit_sync)) {
 			$app->email_ratelimit_sync->write_disabled();
-			$app->email_ratelimit_sync->restart_rspamd();
 		}
+		$this->reload_rspamd_now();
 		return true;
 	}
 
@@ -369,6 +386,8 @@ class email_ratelimit_installer extends extension_installer_base {
 			return false;
 		}
 
+		$this->reload_rspamd_now();
+
 		return true;
 	}
 
@@ -377,29 +396,45 @@ class email_ratelimit_installer extends extension_installer_base {
 	public function uninstall() {
 		global $app;
 
+		$ok = true;
+
 		//* 1. stop rspamd from dofile()ing the generated configuration. This has
 		//  to happen BEFORE the files are deleted: a reload in between would
 		//  leave rspamd with a dofile() of a missing file and it would refuse
-		//  to start.
-		$this->unregister_rspamd_include();
-
-		//* 2. drop the generated files and reload rspamd
-		$sync_class = $this->ispconfig_dir . '/server/lib/classes/email_ratelimit_sync.inc.php';
-		if(file_exists($sync_class)) {
-			$app->uses('email_ratelimit_sync');
-			if(isset($app->email_ratelimit_sync) && is_object($app->email_ratelimit_sync)) {
-				$app->email_ratelimit_sync->remove_generated();
-			}
+		//  to start. If this fails, delete nothing.
+		if(!$this->unregister_rspamd_include()) {
+			$this->messages[] = 'ERROR: could not remove the rspamd include, no files were deleted';
+			return false;
 		}
 
+		//* 2. delete the generated files directly. Deliberately does not go
+		//  through email_ratelimit_sync: uninstall has to work when that class
+		//  (or the app bootstrap) is the broken part.
+		foreach(array('/etc/rspamd/email_ratelimit.conf.lua', '/etc/rspamd/email_ratelimit.lua') as $f) {
+			if(file_exists($f)) {
+				if(@unlink($f)) {
+					$this->messages[] = 'removed ' . basename($f);
+				} else {
+					$this->messages[] = "ERROR: cannot delete $f";
+					$ok = false;
+				}
+			}
+		}
+		$this->reload_rspamd_now();
+
 		//* 3. remove the deployed files (the core does not do this for us)
-		$this->apply_file_list(true);
+		if(!$this->apply_file_list(true)) {
+			$this->messages[] = 'ERROR: some deployed files could not be removed';
+			$ok = false;
+		}
 
 		//* 4. remove the columns we added to core tables
-		$this->drop_core_columns();
+		if(!$this->drop_core_columns()) {
+			$ok = false;
+		}
 
 		//* the extension's own table is dropped by install/uninstall_master.sql
-		return true;
+		return $ok;
 	}
 
 	//* ------------------------------------------------------------------ helper
@@ -423,10 +458,6 @@ class email_ratelimit_installer extends extension_installer_base {
 
 	//* ------------------------------------------------------- rspamd.local.lua
 
-	/** Markers around the block this extension owns in rspamd.local.lua. */
-	const RSPAMD_BEGIN = '-- email_ratelimit (managed by the ISPConfig email_ratelimit extension) BEGIN';
-	const RSPAMD_END   = '-- email_ratelimit END';
-
 	/**
 	 * The generated module is loaded from Rspamd's official customisation entry
 	 * point /etc/rspamd/rspamd.local.lua, which rspamd dofile()s. Both the
@@ -437,22 +468,12 @@ class email_ratelimit_installer extends extension_installer_base {
 	 * uninstall can remove it without touching anything the admin put there.
 	 */
 	private function rspamd_block() {
-		return self::RSPAMD_BEGIN . "\n"
-			. "dofile('/etc/rspamd/email_ratelimit.conf.lua')\n"
-			. "dofile('/etc/rspamd/email_ratelimit.lua')\n"
-			. self::RSPAMD_END . "\n";
+		return erl_rspamd_block();
 	}
 
 	/** Write a file atomically: temp file in the same directory, then rename. */
 	private function write_atomic($path, $content, $mode = 0644) {
-		$tmp = $path . '.tmp.' . getmypid();
-		if(@file_put_contents($tmp, $content) === false) return false;
-		@chmod($tmp, $mode);
-		if(!@rename($tmp, $path)) {
-			@unlink($tmp);
-			return false;
-		}
-		return true;
+		return erl_write_atomic($path, $content, $mode);
 	}
 
 	/**
@@ -461,44 +482,49 @@ class email_ratelimit_installer extends extension_installer_base {
 	 * cleanly instead of ending up with two includes.
 	 */
 	private function strip_rspamd_block($content) {
-		$lines = preg_split('/\R/', $content);
-		$out = array();
-		$in_block = false;
-		$skip_legacy_next = false;
-		$legacy_marker = '-- email_ratelimit (managed by the ISPConfig email_ratelimit extension)';
-
-		foreach($lines as $line) {
-			if(strpos($line, self::RSPAMD_BEGIN) !== false) {
-				$in_block = true;
-				continue;
-			}
-			if($in_block) {
-				if(strpos($line, self::RSPAMD_END) !== false) $in_block = false;
-				continue;
-			}
-			if($skip_legacy_next) {
-				$skip_legacy_next = false;
-				if(trim($line) === "dofile('/etc/rspamd/email_ratelimit.conf.lua')") continue;
-			}
-			if(trim($line) === $legacy_marker) {
-				$skip_legacy_next = true;
-				continue;
-			}
-			$out[] = $line;
-		}
-		return rtrim(implode("\n", $out)) . "\n";
+		return erl_rspamd_strip($content);
 	}
+
 
 	/**
 	 * 0640 root:_rspamd when that group exists (the generated files contain
 	 * every mailbox address), 0644 otherwise so rspamd can still read them.
 	 */
 	private function fix_rspamd_perms($path) {
-		if(!file_exists($path)) return;
-		@chmod($path, 0640);
-		if(!@chgrp($path, '_rspamd')) {
-			@chmod($path, 0644);
+		erl_rspamd_perms($path);
+	}
+
+	/**
+	 * Reload rspamd right now.
+	 *
+	 * restartServiceDelayed() only queues an action that server.php drains at
+	 * the end of its own run; a CLI install/uninstall never reaches that point,
+	 * so the new configuration would otherwise sit on disk unused (and an
+	 * uninstall would keep enforcing the old limits from rspamd's memory).
+	 */
+	private function reload_rspamd_now() {
+		global $app;
+
+		if(isset($app) && is_object($app) && isset($app->services) && is_object($app->services)) {
+			$ret = @$app->services->restartService('rspamd', 'reload');
+			if(is_array($ret) && isset($ret['retval']) && intval($ret['retval']) === 0) {
+				$this->messages[] = 'reloaded rspamd';
+				return true;
+			}
 		}
+
+		foreach(array('systemctl reload-or-restart rspamd', 'service rspamd reload') as $cmd) {
+			$out = array();
+			$rc = 1;
+			@exec($cmd . ' 2>&1', $out, $rc);
+			if($rc === 0) {
+				$this->messages[] = 'reloaded rspamd (' . $cmd . ')';
+				return true;
+			}
+		}
+
+		$this->messages[] = 'WARN: could not reload rspamd, do it manually: service rspamd reload';
+		return false;
 	}
 
 	private function register_rspamd_include() {
@@ -550,14 +576,19 @@ class email_ratelimit_installer extends extension_installer_base {
 
 	private function unregister_rspamd_include() {
 		$local_lua = '/etc/rspamd/rspamd.local.lua';
+		$failed = false;
 
 		if(file_exists($local_lua)) {
-			$current = file_get_contents($local_lua);
-			if($current !== false && strpos($current, 'email_ratelimit') !== false) {
+			$current = @file_get_contents($local_lua);
+			if($current === false) {
+				$this->messages[] = "ERROR: cannot read $local_lua";
+				$failed = true;
+			} elseif(strpos($current, 'email_ratelimit') !== false) {
 				$clean = $this->strip_rspamd_block($current);
 				if($clean !== $current) {
 					if(!$this->write_atomic($local_lua, $clean, 0644)) {
 						$this->messages[] = "ERROR: cannot write $local_lua";
+						$failed = true;
 					} else {
 						$this->messages[] = 'unregistered rspamd.local.lua include';
 					}
@@ -565,12 +596,7 @@ class email_ratelimit_installer extends extension_installer_base {
 			}
 		}
 
-		foreach(array('/etc/rspamd/email_ratelimit.conf.lua', '/etc/rspamd/email_ratelimit.lua') as $f) {
-			if(file_exists($f)) {
-				@unlink($f);
-				$this->messages[] = 'removed ' . basename($f);
-			}
-		}
+		if($failed) return false;
 		return true;
 	}
 }

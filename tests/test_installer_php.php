@@ -106,5 +106,55 @@ check('register is idempotent', $once === $twice);
 $only_legacy_tail = $admin . $block . "local y = 2\n";
 check('content after block preserved', strpos($strip_m->invoke($inst, $only_legacy_tail), 'local y = 2') !== false);
 
+
+// ---------------------------------------------------------------- uninstall idempotency
+
+echo "\nuninstall idempotency\n";
+
+/**
+ * Minimal information_schema stand-in: table_exists() and column_exists() each
+ * run one queryOneRecord(), so the fake only has to answer those two shapes.
+ */
+class MetaDb {
+	public $tables = array();
+	public $columns = array();   // 'table.column' => true
+	public $failAlter = false;
+	public $errorMessage = '';
+
+	function queryOneRecord($sql, $table = null, $column = null) {
+		if(strpos($sql, 'information_schema.TABLES') !== false) {
+			return array('cnt' => in_array($table, $this->tables, true) ? 1 : 0);
+		}
+		if(strpos($sql, 'information_schema.COLUMNS') !== false) {
+			return array('cnt' => isset($this->columns[$table . '.' . $column]) ? 1 : 0);
+		}
+		return array('cnt' => 0);
+	}
+
+	function query($sql) {
+		if($this->failAlter) {
+			$this->errorMessage = 'denied';
+			return false;
+		}
+		return new stdClass;
+	}
+}
+
+$db = new MetaDb;
+$db->tables = array('mail_user');
+$db->columns = array('mail_user.erl_limit_mode' => true);
+
+$drop_m = $rc->getMethod('drop_column');
+$drop_m->setAccessible(true);
+
+check('dropping a column that is gone is success', $drop_m->invoke($inst, $db, 'mail_user', 'erl_out_limit') === true);
+check('dropping from a missing table is success', $drop_m->invoke($inst, $db, 'no_such_table', 'erl_x') === true);
+
+$db2 = new MetaDb;
+$db2->tables = array('mail_user');
+$db2->columns = array('mail_user.erl_limit_mode' => true);
+$db2->failAlter = true;
+check('a failed DROP is still reported as failure', $drop_m->invoke($inst, $db2, 'mail_user', 'erl_limit_mode') === false);
+
 echo "\n" . ($fail === 0 ? "ALL PASSED\n" : "$fail FAILED\n");
 exit($fail === 0 ? 0 : 1);
