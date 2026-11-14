@@ -248,11 +248,22 @@ class email_ratelimit_sync {
 				 FROM `email_ratelimit`
 				 WHERE `server_id` = ? AND `active` = 'y' AND `limit` > 0", $server_id);
 			if(is_array($rows)) {
+				//* Deduplicate by source|type: the Lua side keeps them in a map,
+				//  so a duplicate row would otherwise silently win in an
+				//  unpredictable order.
+				$seen = array();
 				foreach($rows as $r) {
 					$src = strtolower(trim($r['source']));
 					if($src === '') continue;
+					//* A domain rule is written "@example.com" at runtime; accept a
+					//  bare "example.com" from older rows / the remote API instead
+					//  of silently generating a rule that can never match.
+					if(strpos($src, '@') === false) $src = '@' . $src;
 					$type = $r['type'];
 					if($type !== 'in' && $type !== 'out' && $type !== 'both') $type = 'out';
+					$key = $src . '|' . $type;
+					if(isset($seen[$key])) continue;
+					$seen[$key] = true;
 					$extern[] = array(
 						'source'   => $src,
 						'type'     => $type,
