@@ -12,9 +12,11 @@
  * the existing "Server Settings" group.
  */
 
-$module['nav'][count($module['nav']) - 1]['items'][] = array(
-	'title'   => 'Ratelimit',
-	'target'  => 'content',
-	'link'    => 'mail/email_ratelimit_list.php',
-	'html_id' => 'email_ratelimit_list',
-);
+if(isset($_SESSION['s']['user']['typ']) && $_SESSION['s']['user']['typ'] == 'admin') {
+	$module['nav'][count($module['nav']) - 1]['items'][] = array(
+		'title'   => 'Ratelimit',
+		'target'  => 'content',
+		'link'    => 'mail/email_ratelimit_list.php',
+		'html_id' => 'email_ratelimit_list',
+	);
+}

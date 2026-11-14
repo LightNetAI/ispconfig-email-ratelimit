@@ -22,18 +22,43 @@ if(PHP_SAPI !== 'cli') die("This script must be run from the command line.\n");
 function erl_say($msg) { echo '  ' . $msg . "\n"; }
 
 /**
- * Run a .sql file through the ISPConfig db handle.
+ * Run a .sql file through an ISPConfig db handle.
+ *
  * The files contain plain DDL, one or more statements separated by ';'.
+ * Comments are stripped BEFORE splitting: splitting first would glue a leading
+ * "-- ..." header to the following statement, which was then skipped as a
+ * comment and the statement silently lost (that is how the email_ratelimit
+ * table used to never get created).
  */
-function erl_sql($app, $file) {
-	if(!file_exists($file)) return true;
-	$sql = trim(file_get_contents($file));
-	if($sql === '') return true;
+function erl_sql($db, $file) {
+	if(!file_exists($file)) {
+		fwrite(STDERR, "ERROR: SQL file not found: $file\n");
+		return false;
+	}
+	$sql = file_get_contents($file);
+	if($sql === false) {
+		fwrite(STDERR, "ERROR: cannot read SQL file: $file\n");
+		return false;
+	}
+
+	$kept = array();
+	foreach(preg_split('/\R/', $sql) as $line) {
+		$t = trim($line);
+		if($t === '' || strpos($t, '--') === 0 || (isset($t[0]) && $t[0] === '#')) continue;
+		$kept[] = $line;
+	}
+	$sql = trim(implode("\n", $kept));
 
 	foreach(preg_split('/;\s*(?:\n|$)/', $sql) as $stmt) {
 		$stmt = trim($stmt);
-		if($stmt === '' || strpos($stmt, '--') === 0) continue;
-		$app->db->query($stmt);
+		if($stmt === '') continue;
+		$res = $db->query($stmt);
+		if($res === false) {
+			$err = (isset($db->errorMessage) && $db->errorMessage !== '') ? ': ' . $db->errorMessage : '';
+			fwrite(STDERR, "ERROR: SQL statement failed$err\n");
+			fwrite(STDERR, "  " . substr(preg_replace('/\s+/', ' ', $stmt), 0, 120) . "\n");
+			return false;
+		}
 	}
 	return true;
 }
@@ -136,10 +161,19 @@ switch($action) {
 		}
 
 		if($action === 'install') {
-			erl_say('install_master.sql');
-			erl_sql($app, __DIR__ . '/install_master.sql');
-			erl_say('install_node.sql');
-			erl_sql($app, __DIR__ . '/install_node.sql');
+			erl_say('install_master.sql (master database)');
+			if(!erl_sql($app->dbmaster, __DIR__ . '/install_master.sql')) exit(1);
+
+			//* Verify the table really exists - "the deployer said OK" is not
+			//  evidence, and everything downstream depends on this table.
+			$row = $app->dbmaster->queryOneRecord(
+				"SELECT COUNT(*) AS cnt FROM information_schema.TABLES
+				 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'email_ratelimit'");
+			if(!is_array($row) || empty($row['cnt'])) {
+				fwrite(STDERR, "ERROR: table email_ratelimit was not created\n");
+				exit(1);
+			}
+			erl_say('table email_ratelimit created/verified');
 		}
 
 		$version = 0;
@@ -165,10 +199,8 @@ switch($action) {
 	case 'uninstall':
 		erl_say('installer->uninstall()');
 		if(!$installer->uninstall()) { echo "FAILED\n"; exit(1); }
-		erl_say('uninstall_master.sql');
-		erl_sql($app, __DIR__ . '/uninstall_master.sql');
-		erl_say('uninstall_node.sql');
-		erl_sql($app, __DIR__ . '/uninstall_node.sql');
+		erl_say('uninstall_master.sql (master database)');
+		if(!erl_sql($app->dbmaster, __DIR__ . '/uninstall_master.sql')) exit(1);
 		break;
 }
 
