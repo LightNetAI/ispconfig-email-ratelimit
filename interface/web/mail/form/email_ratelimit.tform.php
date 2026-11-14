@@ -51,7 +51,7 @@ $form["tabs"]['ratelimit'] = array (
 			'validators' => array (  0 => array ( 'type' => 'NOTEMPTY',
 					'errmsg'=> 'source_error_empty'),
 				1 => array ( 'type' => 'REGEX',
-					'regex' => '/^(@?[A-Za-z0-9._%+\-]+@)?[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/',
+					'regex' => '/^(?:[A-Za-z0-9._%+\-]+@|@)[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/',
 					'errmsg'=> 'source_error_regex'),
 			),
 			'default' => '',
