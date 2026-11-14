@@ -36,18 +36,38 @@ Limits are set in four places, each overriding the one above:
 ### Behaviour
 
 * **Per recipient counting** — a message to 3 recipients counts as 3 for incoming.
+* **Per-window counters** — every limit owns a fixed window (1 minute … 1 day).
+  Keys embed the interval and the window number (`erl:<interval>:<window>:…`), so
+  a new window starts empty with no cron job; the TTL only cleans up stale keys.
 * **Only accepted mail counts** — the counter is checked and incremented
-  atomically, so a rejected burst consumes no quota.
+  atomically, so a rejected message never consumes quota. A message with several
+  recipients can still spend quota for the recipients checked before the one that
+  tripped the limit.
 * **Soft reject (4xx), never a hard bounce** — the sending server queues and
   retries; nothing is lost.
-* **Counters reset at midnight** with no cron job. Keys are date-scoped
-  (`erl:YYYY-MM-DD:...`) with a TTL for cleanup.
 * **Fail open** — if Redis is unreachable, mail is allowed. A counter outage
   never blocks mail.
 * **Unlimited is the default** — nothing is limited until you enable it and set
-  a limit greater than zero.
+  a limit greater than zero. A per-domain or per-mailbox limit is enforced even
+  when the server-wide default for that direction is `0`.
+* **External rules match the remote party** — *Incoming* is matched against the
+  envelope sender, *Outgoing* against a destination recipient.
 * **Unauthenticated mail is not counted** against outgoing limits (no SASL user
   → no outgoing bucket).
+
+### Scope and limitations
+
+* **External rules are administrator-only.** `Mail > Ratelimit` is server wide, so
+  the page and its menu entry are restricted to admin accounts; a reseller cannot
+  throttle another tenant's mail. Per-domain and per-mailbox limits remain
+  available to resellers for their own domains.
+* **Locally injected mail is not covered.** Outgoing limits key on the SASL user,
+  so mail sent through `sendmail`, PHP `mail()` or a cron script is not counted.
+  That closes the compromised-mailbox path, not the compromised-website path.
+* **Incoming limits count spam too.** The limit caps everything delivered to a
+  mailbox; it does not filter. Set it generously or leave it at `0`.
+* **Single Redis only** (not Redis Cluster — the check script needs its key and
+  TTL in one hash slot).
 
 ---
 
@@ -56,6 +76,10 @@ Limits are set in four places, each overriding the one above:
 * ISPConfig **3.3+** (tested against 3.3.2p1)
 * Rspamd as the Postfix content filter (`System > Server Config > Mail > Content Filter = Rspamd`)
 * Redis (already required by Rspamd in a standard ISPConfig 3.3 setup)
+* The installer adds a guarded two-line `dofile()` block to
+  `/etc/rspamd/rspamd.local.lua` — the generated configuration **and** the
+  enforcement module. Both files must exist: Rspamd aborts its config load on a
+  `dofile()` of a missing path.
 * Postfix wired to Rspamd as a milter — this is what ISPConfig does for rspamd,
   and it is what makes the SASL user visible to Rspamd:
   `smtpd_milters = inet:localhost:11332`, `milter_mail_macros = ... {auth_authen}`
@@ -84,9 +108,12 @@ php install/deploy.php install
 1. adds the `erl_*` columns to `server`, `mail_domain`, `mail_user`
 2. deploys the files (see `install/file.list`) and creates the two `plugin.d`
    directories and two theme template directories that do not exist in a stock install
-3. creates the `email_ratelimit` table
-4. appends one guarded `dofile(...)` line to `/etc/rspamd/rspamd.local.lua`
-5. generates `/etc/rspamd/email_ratelimit.conf.lua` and reloads Rspamd
+3. creates (and verifies) the `email_ratelimit` table in the master database;
+   the installer exits non-zero if any SQL statement fails
+4. appends the guarded `dofile()` block for the configuration *and* the module
+   to `/etc/rspamd/rspamd.local.lua`, keeping a `.email_ratelimit.bak` copy of your file
+5. generates `/etc/rspamd/email_ratelimit.conf.lua`, deploys
+   `/etc/rspamd/email_ratelimit.lua` and reloads Rspamd
 
 Then, in the panel:
 
@@ -146,7 +173,9 @@ redis-cli --scan --pattern 'erl:*' | xargs -r redis-cli del
 
 | Symptom | Check |
 |---------|-------|
-| Nothing is limited | `erl_enabled` in `System > Server Config > Mail` must be **on**, and the relevant limit **> 0**. Then `cat /etc/rspamd/email_ratelimit.conf.lua` and confirm `enabled = true`. |
+| Nothing is limited | `erl_enabled` in `System > Server Config > Mail` must be **on**, and either the relevant server limit **> 0** or a per-mailbox/external rule must exist. Then check both `dofile()` lines are in `/etc/rspamd/rspamd.local.lua` and `cat /etc/rspamd/email_ratelimit.conf.lua` shows `enabled = true`. |
+| No `erl ok` / `erl DEFER` lines in the log at all | The module is not loaded. `grep email_ratelimit /etc/rspamd/rspamd.local.lua` must show two `dofile()` lines; `rspamadm configtest` must be clean. Re-run `php install/deploy.php update`. |
+| `redis error … allowing mail` on every message | Rspamd cannot run the check script. Verify Redis is reachable and that the module deployed by `update` is the current one (`erl ok` lines should appear within one message). |
 | Config on disk is stale | The cron job (`100-email_ratelimit.inc.php`, every 10 min) repairs a config that drifted while the server process was down. `/var/log/ispconfig/ispconfig.log` shows `email_ratelimit: configuration regenerated`. |
 | Outgoing limit never triggers | Rspamd must see the SASL user. Confirm the milter macros include `{auth_authen}` (see Requirements) — without it every message looks unauthenticated and outgoing limits are skipped. |
 | Incoming limit triggers on spam | Expected. An incoming limit caps everything delivered to a mailbox, it does not filter spam. Set it generously or leave it at `0`. |
@@ -163,8 +192,8 @@ mail_user forms
   │ on_after_formdef injects         │ on server_*/mail_*_* events
   │ the erl_* fields                 │
   │                                  ▼
-  │ tab plugin onInsert/onUpdate → email_ratelimit_sync
-  │ writes erl_* columns             │ resolves effective limits
+  │ core tform saves the tab fields   │ resolves effective limits
+  │ (the erl_* columns)              │
   ├─ Mail > Ratelimit CRUD ────────► │ renders ERL_CONFIG Lua table
     (own table, datalog hook)        │ writes /etc/rspamd/*.conf.lua
                                      ▼
@@ -182,9 +211,11 @@ server — so a multiserver setup needs nothing extra to propagate them.
 The extension's own `email_ratelimit` table (the *Mail > Ratelimit* external
 limits) is created by `install_master.sql` and therefore only exists in the
 **master** database. On a slave it is read through `$app->dbmaster`, and
-`install/master_grants.list` declares the `SELECT` right the slave's `ispcsrv<id>`
-MySQL user needs on it (applied by ISPConfig's own `setrights.php`, so it
-survives ISPConfig updates).
+`install/master_grants.list` declares the `SELECT` right the slave's
+`ispcsrv<id>` MySQL user needs on it. Note: on ISPConfig 3.3.1 nothing reads that
+file — it targets a newer extension framework. On a multi-server setup, grant the
+right manually (`GRANT SELECT ON db.email_ratelimit TO 'ispcsrv<id>'@'…'`), or
+`deploy.php` runs as root on the master and the table simply is not replicated.
 
 `install/file.list` is the file manifest. Note that ISPConfig's
 `extension_installer` has `enable_files()`/`disable_files()` methods but nothing
@@ -222,12 +253,24 @@ interface/web/
 
 ## Development
 
-The enforcement module is plain Lua and can be tested without a mail server. The
-test harness used while building this extension lives outside the package:
-a faithful rspamd API stub plus a real `redis-server`, driving the real module
-through 27 assertions (limits, overrides, isolation, multi-recipient counting,
-fail-open, day-scoped reset, disabled directions).
+The enforcement module is plain Lua (Lua 5.1 / LuaJIT, as embedded by Rspamd) and
+is covered by a dependency-free harness with an Rspamd API stub, so it can be
+tested without a mail server:
+
+```bash
+for c in global_out override_only override_in extern_out extern_out_dedupe \
+         extern_in soft_reject no_check_when_unlimited disabled; do
+  lua5.1 tests/ratelimit_spec.lua "$c" server/lua/email_ratelimit.lua || exit 1
+done
+
+php tests/test_installer_php.php   # SQL loader + rspamd.local.lua block handling
+```
+
+The Lua tests pin the behaviour that matters: the Redis call shape (`keys` vs
+`args`), one script registration, per-mailbox overrides with the global default
+off, per-window keys and TTLs, external rules matching the remote party,
+de-duplication per message, soft reject, and the idle/disabled paths.
 
 When changing `server/lua/email_ratelimit.lua`, re-run `php install/deploy.php update`
-so the copy in `/usr/local/ispconfig/server/lua/` is refreshed — the sync class
-installs it to `/etc/rspamd/email_ratelimit.lua`.
+so the deployed copy is refreshed — the sync class installs it to
+`/etc/rspamd/email_ratelimit.lua`.
