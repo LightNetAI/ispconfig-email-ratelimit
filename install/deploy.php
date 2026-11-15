@@ -22,6 +22,56 @@ if(PHP_SAPI !== 'cli') die("This script must be run from the command line.\n");
 function erl_say($msg) { echo '  ' . $msg . "\n"; }
 
 /**
+ * Locate the MySQL/MariaDB command line client.
+ */
+function erl_mysql_bin() {
+	foreach(array('/usr/bin/mariadb', '/usr/bin/mysql', '/usr/local/bin/mysql') as $bin) {
+		if(is_executable($bin)) return $bin;
+	}
+	foreach(array('mariadb', 'mysql') as $name) {
+		$path = trim((string)@shell_exec('command -v ' . $name . ' 2>/dev/null'));
+		if($path !== '' && is_executable($path)) return $path;
+	}
+	return null;
+}
+
+/**
+ * Run DDL as the database superuser over the local socket.
+ *
+ * A hardened ISPConfig install can restrict the `ispconfig` DB user to
+ * SELECT/INSERT/UPDATE/DELETE, which makes every ALTER and CREATE fail. This
+ * script already runs as root, so the root MySQL account (unix_socket auth on
+ * Debian/Ubuntu MariaDB) is the natural fallback: same privilege the core
+ * installer had when it created the database.
+ */
+function erl_root_sql($sql, $dbname) {
+	static $bin = false;
+	if($bin === false) $bin = erl_mysql_bin();
+	if($bin === null) return false;
+
+	$cmd = escapeshellarg($bin) . ' --protocol=socket --user=root --batch '
+		. escapeshellarg($dbname);
+	$desc = array(0 => array('pipe', 'r'), 1 => array('pipe', 'w'), 2 => array('pipe', 'w'));
+	$proc = @proc_open($cmd, $desc, $pipes);
+	if(!is_resource($proc)) return false;
+
+	fwrite($pipes[0], rtrim($sql, "; \n\t\r\0\x0B") . ";\n");
+	fclose($pipes[0]);
+	stream_get_contents($pipes[1]);
+	$err = (string)stream_get_contents($pipes[2]);
+	@fclose($pipes[1]);
+	@fclose($pipes[2]);
+	$rc = proc_close($proc);
+	if($rc !== 0) {
+		$err = trim($err);
+		if($err !== '') fwrite(STDERR, "  root client: $err\n");
+		return false;
+	}
+	return true;
+}
+
+
+/**
  * Point at the path that still works when this script cannot: a standalone
  * cleanup that needs no ISPConfig bootstrap and no database.
  */
@@ -158,6 +208,12 @@ require_once __DIR__ . '/installer.php';
 $classname = $extension_name . '_installer';
 $installer = new $classname();
 
+//* The app DB user may be denied ALTER/CREATE on a hardened server. The DDL
+//  below then goes through the root client instead of failing the install.
+$installer->ddl_runner = function($sql) use ($conf) {
+	return erl_root_sql($sql, $conf['db_database']);
+};
+
 echo "\nemail_ratelimit: $action\n";
 echo str_repeat('-', 60) . "\n";
 
@@ -175,8 +231,11 @@ switch($action) {
 		if($action === 'install') {
 			erl_say('install_master.sql (master database)');
 			if(!erl_sql($app->dbmaster, __DIR__ . '/install_master.sql')) {
-				erl_recover_hint();
-				exit(1);
+				erl_say('app DB user may not create tables, retrying as root');
+				if(!erl_root_sql(file_get_contents(__DIR__ . '/install_master.sql'), $conf['db_database'])) {
+					erl_recover_hint();
+					exit(1);
+				}
 			}
 
 			//* Verify the table really exists - "the deployer said OK" is not
@@ -220,7 +279,11 @@ switch($action) {
 		//  table is worse than a partially clean uninstall, and this statement
 		//  is idempotent.
 		erl_say('uninstall_master.sql (master database)');
-		if(!erl_sql($app->dbmaster, __DIR__ . '/uninstall_master.sql')) $uninstall_ok = false;
+		if(!erl_sql($app->dbmaster, __DIR__ . '/uninstall_master.sql')) {
+			if(!erl_root_sql(file_get_contents(__DIR__ . '/uninstall_master.sql'), $conf['db_database'])) {
+				$uninstall_ok = false;
+			}
+		}
 
 		if(!$uninstall_ok) {
 			echo "FAILED during uninstall\n";

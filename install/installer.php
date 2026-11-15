@@ -23,6 +23,13 @@ require_once __DIR__ . '/rspamd_block.inc.php';
 
 class email_ratelimit_installer extends extension_installer_base {
 
+	/**
+	 * Optional callable($sql) => bool used when the app DB user may not run
+	 * DDL (hardened servers restrict `ispconfig` to DML). deploy.php points
+	 * this at the root MySQL client; the install still requires root anyway.
+	 */
+	public $ddl_runner = null;
+
 	/** Extension name, also the directory name under /usr/local/ispconfig/extensions */
 	private $name = 'email_ratelimit';
 
@@ -98,8 +105,13 @@ class email_ratelimit_installer extends extension_installer_base {
 		if($this->column_exists($db, $table, $column)) {
 			return true;
 		}
-		$res = $db->query("ALTER TABLE `" . $table . "` ADD COLUMN `" . $column . "` " . $ddl);
+		$sql = "ALTER TABLE `" . $table . "` ADD COLUMN `" . $column . "` " . $ddl;
+		$res = $db->query($sql);
 		if($res === false) {
+			if($this->ddl_runner !== null && call_user_func($this->ddl_runner, $sql)) {
+				$this->messages[] = "added column $table.$column (via root client)";
+				return true;
+			}
 			$this->messages[] = "ERROR: cannot add column $table.$column" . $this->db_error($db);
 			return false;
 		}
@@ -112,8 +124,13 @@ class email_ratelimit_installer extends extension_installer_base {
 		//  after an install that stopped before adding every column
 		if(!$this->table_exists($db, $table)) return true;
 		if(!$this->column_exists($db, $table, $column)) return true;
-		$res = $db->query("ALTER TABLE `" . $table . "` DROP COLUMN `" . $column . "`");
+		$sql = "ALTER TABLE `" . $table . "` DROP COLUMN `" . $column . "`";
+		$res = $db->query($sql);
 		if($res === false) {
+			if($this->ddl_runner !== null && call_user_func($this->ddl_runner, $sql)) {
+				$this->messages[] = "dropped column $table.$column (via root client)";
+				return true;
+			}
 			$this->messages[] = "ERROR: cannot drop column $table.$column" . $this->db_error($db);
 			return false;
 		}

@@ -245,14 +245,75 @@ function erl_rescue_connect($conf, $prefix, &$log) {
 	return $m;
 }
 
+/**
+ * Run SQL through the root MySQL client (unix_socket auth on Debian/Ubuntu).
+ * true = ok, false = failed, null = no client installed.
+ */
+function erl_rescue_cli_sql($sql, $dbname) {
+	$bin = null;
+	foreach(array('/usr/bin/mariadb', '/usr/bin/mysql', '/usr/local/bin/mysql') as $b) {
+		if(is_executable($b)) {
+			$bin = $b;
+			break;
+		}
+	}
+	if($bin === null) return null;
+
+	$cmd = escapeshellarg($bin) . ' --protocol=socket --user=root --batch ' . escapeshellarg($dbname);
+	$desc = array(0 => array('pipe', 'r'), 1 => array('pipe', 'w'), 2 => array('pipe', 'w'));
+	$proc = @proc_open($cmd, $desc, $pipes);
+	if(!is_resource($proc)) return null;
+
+	fwrite($pipes[0], rtrim($sql, "; \n\t\r") . ";\n");
+	fclose($pipes[0]);
+	stream_get_contents($pipes[1]);
+	$err = (string)stream_get_contents($pipes[2]);
+	@fclose($pipes[1]);
+	@fclose($pipes[2]);
+	$rc = proc_close($proc);
+	if($rc !== 0) return trim($err) !== '' ? trim($err) : false;
+	return true;
+}
+
+/**
+ * Idempotent DDL. "Unknown column"/"unknown table" mean the goal is already
+ * met, and a hardened `ispconfig` DB user that may not ALTER falls back to the
+ * root client - the same privilege the core installer had.
+ */
+function erl_rescue_sql($link, $sql, $dbname, $label, &$log) {
+	if($link !== null) {
+		if(@$link->query($sql)) {
+			$log[] = $label;
+			return true;
+		}
+		$code = $link->errno;
+		if($code === 1091 || $code === 1051 || $code === 1146) {
+			$log[] = $label . ' (already gone)';
+			return true;
+		}
+		$app_err = $link->error;
+	} else {
+		$app_err = 'no database connection';
+	}
+
+	$cli = erl_rescue_cli_sql($sql, $dbname);
+	if($cli === true) {
+		$log[] = $label . ' (via root client)';
+		return true;
+	}
+
+	if($cli === null) {
+		$log[] = 'ERROR: ' . $label . ': ' . $app_err . ' (and no root MySQL client installed)';
+	} else {
+		$log[] = 'ERROR: ' . $label . ': ' . ($cli === false ? $app_err : $cli);
+	}
+	return false;
+}
+
 function erl_rescue_db($ispconfig_dir, $dry, &$log) {
 	$cfg = $ispconfig_dir . '/server/lib/config.inc.php';
 	if(!is_file($cfg)) {
 		$log[] = 'note: no config.inc.php found, skipping database cleanup';
-		return true;
-	}
-	if(!class_exists('mysqli')) {
-		$log[] = 'note: mysqli not available, skipping database cleanup';
 		return true;
 	}
 
@@ -264,9 +325,15 @@ function erl_rescue_db($ispconfig_dir, $dry, &$log) {
 		return true;
 	}
 
-	$ok = true;
-	$local = erl_rescue_connect($conf, 'db_', $log);
-	$master = erl_rescue_connect($conf, 'dbmaster_', $log);
+	$dbname = isset($conf['db_database']) ? $conf['db_database'] : '';
+	if($dbname === '') {
+		$log[] = 'WARN: no database name in config.inc.php, skipping database cleanup';
+		return true;
+	}
+
+	$has_mysqli = class_exists('mysqli');
+	$local = $has_mysqli ? erl_rescue_connect($conf, 'db_', $log) : null;
+	$master = $has_mysqli ? erl_rescue_connect($conf, 'dbmaster_', $log) : null;
 	if($master === null) $master = $local;
 
 	$columns = array(
@@ -275,50 +342,28 @@ function erl_rescue_db($ispconfig_dir, $dry, &$log) {
 		'mail_user'   => array('erl_limit_mode', 'erl_out_limit', 'erl_out_interval', 'erl_in_limit', 'erl_in_interval'),
 	);
 
-	if($local !== null) {
-		foreach($columns as $table => $cols) {
-			foreach($cols as $col) {
-				$res = @$local->query("SELECT COUNT(*) AS c FROM information_schema.COLUMNS
-					WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" . $local->real_escape_string($table) . "'
-					AND COLUMN_NAME = '" . $local->real_escape_string($col) . "'");
-				$has = false;
-				if($res) {
-					$row = $res->fetch_assoc();
-					$has = !empty($row['c']);
-					$res->free();
-				}
-				if(!$has) continue;
-
-				if($dry) {
-					$log[] = "[dry] would drop column $table.$col";
-					continue;
-				}
-				$sql = "ALTER TABLE `" . $table . "` DROP COLUMN `" . $col . "`";
-				if(@$local->query($sql)) {
-					$log[] = "dropped column $table.$col";
-				} else {
-					$log[] = "ERROR: cannot drop $table.$col: " . $local->error;
-					$ok = false;
-				}
+	$ok = true;
+	foreach($columns as $table => $cols) {
+		foreach($cols as $col) {
+			$sql = "ALTER TABLE `" . $table . "` DROP COLUMN `" . $col . "`";
+			if($dry) {
+				$log[] = "[dry] would drop column $table.$col";
+				continue;
 			}
+			if(!erl_rescue_sql($local, $sql, $dbname, "dropped column $table.$col", $log)) $ok = false;
 		}
 	}
 
-	if($master !== null) {
-		if($dry) {
-			$log[] = '[dry] would drop table email_ratelimit (if present)';
-		} elseif(@$master->query('DROP TABLE IF EXISTS `email_ratelimit`')) {
-			$log[] = 'dropped table email_ratelimit';
-		} else {
-			$log[] = 'ERROR: cannot drop table email_ratelimit: ' . $master->error;
-			$ok = false;
-		}
+	$sql = 'DROP TABLE IF EXISTS `email_ratelimit`';
+	if($dry) {
+		$log[] = '[dry] would drop table email_ratelimit (if present)';
+	} elseif(!erl_rescue_sql($master, $sql, $dbname, 'dropped table email_ratelimit', $log)) {
+		$ok = false;
 	}
 
 	if($local !== null) @$local->close();
 	if($master !== null && $master !== $local) @$master->close();
 
-	//* leaving the table behind is not fatal, but say so clearly
 	if(!$dry && !$ok) {
 		$log[] = 'note: database artifacts remain; drop them by hand once the DB is reachable';
 	}

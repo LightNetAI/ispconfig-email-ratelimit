@@ -156,5 +156,36 @@ $db2->columns = array('mail_user.erl_limit_mode' => true);
 $db2->failAlter = true;
 check('a failed DROP is still reported as failure', $drop_m->invoke($inst, $db2, 'mail_user', 'erl_limit_mode') === false);
 
+
+// ---------------------------------------------------------------- restricted DB user
+
+echo "\nrestricted app DB user\n";
+
+$db3 = new MetaDb;
+$db3->tables = array('mail_user');
+$db3->failAlter = true;
+
+$inst2 = $rc->newInstance();
+$ran = array();
+$inst2->ddl_runner = function($sql) use (&$ran) {
+	$ran[] = $sql;
+	return true;
+};
+
+$add_m = $rc->getMethod('add_column');
+$add_m->setAccessible(true);
+check('ALTER denied falls back to the root client',
+	$add_m->invoke($inst2, $db3, 'mail_user', 'erl_out_limit', 'INT(11) DEFAULT 0') === true);
+check('fallback ran the same DDL', isset($ran[0]) && strpos($ran[0], 'ADD COLUMN `erl_out_limit`') !== false);
+
+$inst3 = $rc->newInstance();
+$inst3->ddl_runner = function($sql) { return false; };
+check('a failing root client still reports failure',
+	$add_m->invoke($inst3, $db3, 'mail_user', 'erl_out_limit', 'INT(11) DEFAULT 0') === false);
+
+//* no runner configured: keep the original behaviour
+check('without a runner the ALTER failure is reported',
+	$add_m->invoke($rc->newInstance(), $db3, 'mail_user', 'erl_out_limit', 'INT(11) DEFAULT 0') === false);
+
 echo "\n" . ($fail === 0 ? "ALL PASSED\n" : "$fail FAILED\n");
 exit($fail === 0 ? 0 : 1);
