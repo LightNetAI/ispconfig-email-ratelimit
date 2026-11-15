@@ -237,7 +237,16 @@ function erl_rescue_connect($conf, $prefix, &$log) {
 
 	if($h === '' || $d === '' || $u === '') return null;
 
-	$m = @new mysqli($h, $u, $p, $d, $pn);
+	//* PHP >= 8.1 makes mysqli throw by default, and "@" does not suppress
+	//  exceptions - a refused connection would otherwise abort the rescue.
+	if(function_exists('mysqli_report')) @mysqli_report(MYSQLI_REPORT_OFF);
+
+	try {
+		$m = @new mysqli($h, $u, $p, $d, $pn);
+	} catch(Exception $e) {
+		$log[] = "WARN: cannot connect to $d: " . $e->getMessage();
+		return null;
+	}
 	if($m->connect_errno) {
 		$log[] = "WARN: cannot connect to $d: " . $m->connect_error;
 		return null;
@@ -282,7 +291,13 @@ function erl_rescue_cli_sql($sql, $dbname) {
  */
 function erl_rescue_sql($link, $sql, $dbname, $label, &$log) {
 	if($link !== null) {
-		if(@$link->query($sql)) {
+		try {
+			$done = @$link->query($sql);
+		} catch(Exception $e) {
+			$done = false;
+			$log[] = 'WARN: ' . $e->getMessage();
+		}
+		if($done) {
 			$log[] = $label;
 			return true;
 		}
@@ -299,6 +314,13 @@ function erl_rescue_sql($link, $sql, $dbname, $label, &$log) {
 	$cli = erl_rescue_cli_sql($sql, $dbname);
 	if($cli === true) {
 		$log[] = $label . ' (via root client)';
+		return true;
+	}
+
+	//* the root client reports "already gone" as an error too (1051 unknown
+	//  table, 1091 can't drop, 1146 table missing); that is still success
+	if(is_string($cli) && preg_match('/\b(1051|1091|1146)\b/', $cli)) {
+		$log[] = $label . ' (already gone)';
 		return true;
 	}
 
