@@ -10,10 +10,10 @@
  * tform_actions calls after the core mail_domain record has been written.
  */
 
-class email_ratelimit_domain_plugin {
+class email_ratelimit_domain {
 
-	var $plugin_name = 'email_ratelimit_domain_plugin';
-	var $class_name  = 'email_ratelimit_domain_plugin';
+	var $plugin_name = 'email_ratelimit_domain';
+	var $class_name  = 'email_ratelimit_domain';
 
 	private $columns = array(
 		'erl_limit_mode'   => "enum('global','unlimited','custom') NOT NULL DEFAULT 'global'",
@@ -35,7 +35,7 @@ class email_ratelimit_domain_plugin {
 	public function onLoad() {
 		global $app;
 
-		$app->plugin->registerEvent('mail:mail_domain:on_after_formdef', $this->plugin_name, 'add_fields');
+		$app->plugin->registerEvent('mail:mail_domain:on_after_formdef', $this->plugin_name, 'add_fields', 'mail');
 	}
 
 	public function add_fields($event_name, $page_form) {

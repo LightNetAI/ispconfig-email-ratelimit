@@ -151,6 +151,11 @@ php install/deploy.php update
 Updates are idempotent. If a file this extension owns has been changed by
 something else, the previous content is kept as `<file>.email_ratelimit.bak`.
 
+The panel reads `plugin.d` once per login session, so **log out of the panel and
+back in** after installing or updating. Until you do, the Ratelimit tab is
+missing (or shows empty fields) in an already open session even though the files
+on disk are correct.
+
 ## Disable / uninstall
 
 ```bash
@@ -210,6 +215,8 @@ only when everything succeeded, and it is safe to run twice.
 | `ALTER command denied to user 'ispconfig'` during install | The app DB user is restricted to DML on this server. Install retries the DDL through the root MySQL client (`mysql --protocol=socket -uroot`), so it should continue and log `added column … (via root client)`. If no MySQL client is installed, grant it once as root: `GRANT ALTER, CREATE, DROP ON \`dbispconfig\`.* TO 'ispconfig'@'localhost'; FLUSH PRIVILEGES;` |
 | Everything is allowed (fail open) | Redis is unreachable. `redis-cli ping`. This is deliberate — mail is never blocked by a counter outage. |
 | Panel shows no Ratelimit panel | The theme template override or the `plugin.d` file did not deploy. Re-run `php install/deploy.php update` and check `/usr/local/ispconfig/interface/web/mail/lib/plugin.d/`. If you use a theme other than `default`, copy the three files from `themes/default/templates/{mail,admin}/` into your theme's `templates/` directory. |
+| Ratelimit block is there but the button and fields are empty | The session was opened before the plugin files were deployed (the panel caches plugins at login) or the page was opened in the wrong module context. Log out of the panel and back in, then open the form through the menu (`Mail > Domain`, not a bookmark). |
+| A setting saved in the panel has no effect | Server wide values live in the `[mail]` section of the server config INI (`SELECT config FROM server`), not in SQL columns. Check `erl_enabled=y` there and that `cat /etc/rspamd/email_ratelimit.conf.lua` shows `enabled = true` after the next server run. |
 
 ## How it works
 

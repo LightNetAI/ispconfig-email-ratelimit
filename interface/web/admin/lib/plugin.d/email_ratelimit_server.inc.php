@@ -15,10 +15,10 @@
  * replicates to every mail server, so nothing else has to be synced.
  */
 
-class email_ratelimit_server_plugin {
+class email_ratelimit_server {
 
-	var $plugin_name = 'email_ratelimit_server_plugin';
-	var $class_name  = 'email_ratelimit_server_plugin';
+	var $plugin_name = 'email_ratelimit_server';
+	var $class_name  = 'email_ratelimit_server';
 
 	/** columns this plugin owns in the `server` table */
 	private $columns = array(
@@ -43,7 +43,7 @@ class email_ratelimit_server_plugin {
 		global $app;
 
 		//* Inject our fields into the server_config form the moment it is loaded.
-		$app->plugin->registerEvent('admin:server_config:on_after_formdef', $this->plugin_name, 'add_fields');
+		$app->plugin->registerEvent('admin:server_config:on_after_formdef', $this->plugin_name, 'add_fields', 'admin');
 	}
 
 	/**

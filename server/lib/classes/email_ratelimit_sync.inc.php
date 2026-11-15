@@ -87,6 +87,24 @@ class email_ratelimit_sync {
 		return true;
 	}
 
+	/**
+	 * Return the [mail] section of the server config, or an empty array when
+	 * it cannot be read.
+	 */
+	private function server_mail_config($server_id) {
+		global $app;
+
+		if(!is_object($app->getconf)) {
+			$app->uses('getconf');
+		}
+		if(!is_object($app->getconf)) return array();
+
+		$cfg = @$app->getconf->get_server_config($server_id);
+		if(is_array($cfg) && isset($cfg['mail']) && is_array($cfg['mail'])) return $cfg['mail'];
+
+		return array();
+	}
+
 	//* ----------------------------------------------------------------- resolve
 
 	/**
@@ -122,13 +140,25 @@ class email_ratelimit_sync {
 			return false;
 		}
 
-		$enabled = (isset($server['erl_enabled']) && $server['erl_enabled'] == 'y');
+		/* System > Server Config > Mail is stored in the server config INI blob
+		 * (server.config), not in SQL columns: the panel writes the whole [mail]
+		 * section through getconf/ini_parser. Read the INI first and only fall
+		 * back to the columns (set by hand or by an older release). */
+		$mail = $this->server_mail_config($server_id);
 
-		$out_limit    = isset($server['erl_out_limit'])    ? intval($server['erl_out_limit'])    : 0;
-		$out_interval = isset($server['erl_out_interval']) ? intval($server['erl_out_interval']) : 3600;
-		$in_limit     = isset($server['erl_in_limit'])     ? intval($server['erl_in_limit'])     : 0;
-		$in_interval  = isset($server['erl_in_interval'])  ? intval($server['erl_in_interval'])  : 3600;
-		$default_user = isset($server['erl_default_user_out']) ? intval($server['erl_default_user_out']) : 0;
+		$get = function($key, $default) use ($mail, $server) {
+			if(is_array($mail) && isset($mail[$key]) && $mail[$key] !== '') return $mail[$key];
+			if(isset($server[$key]) && $server[$key] !== '') return $server[$key];
+			return $default;
+		};
+
+		$enabled = ($get('erl_enabled', 'n') == 'y');
+
+		$out_limit    = intval($get('erl_out_limit', 0));
+		$out_interval = intval($get('erl_out_interval', 3600));
+		$in_limit     = intval($get('erl_in_limit', 0));
+		$in_interval  = intval($get('erl_in_interval', 3600));
+		$default_user = intval($get('erl_default_user_out', 0));
 
 		//* A limit of 0 (or an empty value) means "this direction is unlimited".
 		$defaults = array(
