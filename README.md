@@ -157,7 +157,7 @@ Updates are idempotent. If a file this extension owns has been changed by
 something else, the previous content is kept as `<file>.email_ratelimit.bak`.
 
 The panel reads `plugin.d` once per login session, so **log out of the panel and
-back in** after installing or updating. Until you do, the Ratelimit tab is
+back in** after installing or updating. Until you do, the Ratelimit panel is
 missing (or shows empty fields) in an already open session even though the files
 on disk are correct.
 
