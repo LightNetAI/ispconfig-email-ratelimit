@@ -152,23 +152,28 @@ class email_ratelimit_sync {
 			return $default;
 		};
 
-		$enabled = ($get('erl_enabled', 'n') == 'y');
+		/* Two independent switches, as in the reference panel. Older records only
+		 * have the single erl_enabled flag, so fall back to it per direction. */
+		$legacy = ($get('erl_enabled', 'n') == 'y');
+		$out_on = ($get('erl_out_enabled', $legacy ? 'y' : 'n') == 'y');
+		$in_on  = ($get('erl_in_enabled',  $legacy ? 'y' : 'n') == 'y');
+
+		$enabled = ($out_on || $in_on);
 
 		$out_limit    = intval($get('erl_out_limit', 0));
 		$out_interval = intval($get('erl_out_interval', 3600));
 		$in_limit     = intval($get('erl_in_limit', 0));
 		$in_interval  = intval($get('erl_in_interval', 3600));
-		$default_user = intval($get('erl_default_user_out', 0));
 
 		//* A limit of 0 (or an empty value) means "this direction is unlimited".
 		$defaults = array(
 			'out' => array(
-				'enabled'  => ($out_limit > 0),
+				'enabled'  => ($out_on && $out_limit > 0),
 				'limit'    => max(0, $out_limit),
 				'interval' => $this->sanitize_interval($out_interval),
 			),
 			'in'  => array(
-				'enabled'  => ($in_limit > 0),
+				'enabled'  => ($in_on && $in_limit > 0),
 				'limit'    => max(0, $in_limit),
 				'interval' => $this->sanitize_interval($in_interval),
 			),
@@ -241,14 +246,6 @@ class email_ratelimit_sync {
 				} else { // 'domain'
 					$eff_out = $base_out;
 					$eff_in  = $base_in;
-				}
-
-				// the server-wide "default per mailbox" acts as an upper bound for
-				// mailboxes that inherit, so an admin can cap everyone at once
-				if($default_user > 0 && $mmode !== 'custom') {
-					if($eff_out['enabled'] && ($eff_out['limit'] === 0 || $eff_out['limit'] > $default_user)) {
-						$eff_out['limit'] = $default_user;
-					}
 				}
 
 				// only emit an entry when it differs from the server default.

@@ -305,7 +305,11 @@ class email_ratelimit_installer extends extension_installer_base {
 				// and avoids a backup file on every re-install.
 				if(file_exists($abs) && !is_link($abs)) {
 					$existing = file_get_contents($abs);
-					if($existing !== $content && !file_exists($abs . '.email_ratelimit.bak')) {
+					// A .bak of one of our own earlier versions would be restored
+					// on uninstall and resurrect a stale extension file, so only
+					// back up files that did not come from this extension.
+					if($existing !== $content && !$this->looks_like_ours($abs)
+						&& !file_exists($abs . '.email_ratelimit.bak')) {
 						if(@copy($abs, $abs . '.email_ratelimit.bak')) {
 							$this->messages[] = "backed up $target -> $target.email_ratelimit.bak";
 						}
@@ -332,6 +336,23 @@ class email_ratelimit_installer extends extension_installer_base {
 		return true;
 	}
 
+	/**
+	 * True when the file already belongs to this extension (an earlier version
+	 * of it, or a themed copy we deployed). Such files must not be shadow-copied:
+	 * a .bak would be restored on uninstall and leave a stale panel template
+	 * behind instead of removing it.
+	 */
+	private function looks_like_ours($path) {
+		$head = @file_get_contents($path, false, null, 0, 8192);
+		if($head === false) return false;
+
+		foreach(array('email_ratelimit', 'toggle-ratelimit', 'erl_limit_mode', 'erl_out_enabled') as $needle) {
+			if(strpos($head, $needle) !== false) return true;
+		}
+
+		return false;
+	}
+
 	//* ------------------------------------------------------------------- install
 
 	public function install() {
@@ -341,6 +362,8 @@ class email_ratelimit_installer extends extension_installer_base {
 			$app->log('email_ratelimit: adding the database columns failed, aborting', LOGLEVEL_ERROR);
 			return false;
 		}
+
+		$this->migrate_server_flags();
 
 		if(!$this->apply_file_list(false)) {
 			$app->log('email_ratelimit: file deployment failed', LOGLEVEL_ERROR);
@@ -390,6 +413,8 @@ class email_ratelimit_installer extends extension_installer_base {
 			$this->messages[] = 'ERROR: adding the database columns failed, aborting';
 			return false;
 		}
+
+		$this->migrate_server_flags();
 
 		//* idempotent: existing files are overwritten, links recreated
 		if(!$this->apply_file_list(false)) {
@@ -455,6 +480,61 @@ class email_ratelimit_installer extends extension_installer_base {
 	}
 
 	//* ------------------------------------------------------------------ helper
+
+	/**
+	 * Serialise a config array the way the panel does ("[section]" + "key=value").
+	 * Needed because the server copy of ini_parser::get_ini_string() takes no
+	 * argument and would silently return the unmodified config.
+	 */
+	private function ini_string($cfg) {
+		$out = '';
+		foreach($cfg as $section => $data) {
+			if(!is_array($data)) continue;
+			$out .= '[' . $section . "]\n";
+			foreach($data as $key => $value) {
+				if($key === '') continue;
+				$out .= $key . '=' . trim($value) . "\n";
+			}
+			$out .= "\n";
+		}
+		return $out;
+	}
+
+	/**
+	 * Older installs only had the single erl_enabled switch. The panel now has
+	 * separate outgoing/incoming switches, so seed them from the old value the
+	 * first time we run. Goes through datalogUpdate so the server process picks
+	 * the change up exactly like a panel save.
+	 */
+	private function migrate_server_flags() {
+		global $app, $conf;
+
+		$server_id = isset($conf['server_id']) ? intval($conf['server_id']) : 0;
+		if($server_id <= 0) return;
+
+		$app->uses('getconf,ini_parser');
+		if(!is_object($app->getconf) || !is_object($app->ini_parser)) return;
+
+		$cfg = $app->getconf->get_server_config($server_id);
+		if(!is_array($cfg) || !isset($cfg['mail']) || !is_array($cfg['mail'])) return;
+
+		$mail = $cfg['mail'];
+		if(isset($mail['erl_out_enabled']) || isset($mail['erl_in_enabled'])) return;
+
+		$legacy = (isset($mail['erl_enabled']) && $mail['erl_enabled'] == 'y') ? 'y' : 'n';
+		$mail['erl_out_enabled'] = $legacy;
+		$mail['erl_in_enabled']  = $legacy;
+		$cfg['mail'] = $mail;
+
+		//* The server-side ini_parser::get_ini_string() ignores its argument and
+		//  dumps the last parsed config, so serialise the array ourselves in the
+		//  same format the panel writes.
+		$str = $this->ini_string($cfg);
+		if($str == '') return;
+
+		$app->db->datalogUpdate('server', array('config' => $str), 'server_id', $server_id);
+		$this->messages[] = 'migrated erl_enabled=' . $legacy . ' to erl_out_enabled/erl_in_enabled';
+	}
 
 	private function sync_now() {
 		global $app;

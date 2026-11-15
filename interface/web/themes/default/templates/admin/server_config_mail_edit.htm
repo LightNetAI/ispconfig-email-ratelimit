@@ -197,9 +197,9 @@
             <div class="col-sm-12" style="padding:0"><button class="btn btn-default formbutton-default" type="button" data-toggle="collapse" data-target="#toggle-ratelimit" aria-expanded="false" aria-controls="toggle-ratelimit">{tmpl_var name='erl_settings_txt'}</button></div>
             <div id="toggle-ratelimit" class="collapse">
             <div class="form-group">
-                <label class="col-sm-3 control-label">{tmpl_var name='erl_enabled_txt'}</label>
+                <label class="col-sm-3 control-label">{tmpl_var name='erl_out_enabled_txt'}</label>
                 <div class="col-sm-9">
-                    {tmpl_var name='erl_enabled'}
+                    {tmpl_var name='erl_out_enabled'}
                 </div>
             </div>
             <div class="form-group">
@@ -214,6 +214,12 @@
                 </select></div>
             </div>
             <div class="form-group">
+                <label class="col-sm-3 control-label">{tmpl_var name='erl_in_enabled_txt'}</label>
+                <div class="col-sm-9">
+                    {tmpl_var name='erl_in_enabled'}
+                </div>
+            </div>
+            <div class="form-group">
                 <label for="erl_in_limit" class="col-sm-3 control-label">{tmpl_var name='erl_in_limit_txt'}</label>
                 <div class="col-sm-6"><input type="text" name="erl_in_limit" id="erl_in_limit" value="{tmpl_var name='erl_in_limit'}" class="form-control" /></div>
                 <div class="col-sm-3 input-sm">&nbsp;{tmpl_var name='erl_note_in_txt'}</div>
@@ -223,11 +229,6 @@
                 <div class="col-sm-9"><select name="erl_in_interval" id="erl_in_interval" class="form-control">
                     {tmpl_var name='erl_in_interval'}
                 </select></div>
-            </div>
-            <div class="form-group">
-                <label for="erl_default_user_out" class="col-sm-3 control-label">{tmpl_var name='erl_default_user_out_txt'}</label>
-                <div class="col-sm-6"><input type="text" name="erl_default_user_out" id="erl_default_user_out" value="{tmpl_var name='erl_default_user_out'}" class="form-control" /></div>
-                <div class="col-sm-3 input-sm">&nbsp;{tmpl_var name='erl_note_default_user_txt'}</div>
             </div>
             </div>
 

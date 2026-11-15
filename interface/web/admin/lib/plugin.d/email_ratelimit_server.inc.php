@@ -56,7 +56,7 @@ class email_ratelimit_server {
 
 		$fields = array();
 
-		$fields['erl_enabled'] = array(
+		$fields['erl_out_enabled'] = array(
 			'datatype' => 'VARCHAR',
 			'formtype' => 'CHECKBOX',
 			'default'  => 'n',
@@ -81,6 +81,13 @@ class email_ratelimit_server {
 			'value'    => $this->intervals,
 		);
 
+		$fields['erl_in_enabled'] = array(
+			'datatype' => 'VARCHAR',
+			'formtype' => 'CHECKBOX',
+			'default'  => 'n',
+			'value'    => array(0 => 'n', 1 => 'y'),
+		);
+
 		$fields['erl_in_limit'] = array(
 			'datatype'  => 'INTEGER',
 			'formtype'  => 'TEXT',
@@ -99,33 +106,21 @@ class email_ratelimit_server {
 			'value'    => $this->intervals,
 		);
 
-		$fields['erl_default_user_out'] = array(
-			'datatype'  => 'INTEGER',
-			'formtype'  => 'TEXT',
-			'validators' => array(0 => array('type' => 'REGEX',
-				'regex' => '/^[0-9]{1,9}$/', 'errmsg' => 'erl_limit_error_regex')),
-			'default'   => '0',
-			'value'     => '',
-			'width'     => '10',
-			'maxlength' => '9',
-		);
-
 		foreach($fields as $name => $def) {
 			$page_form->formDef['tabs']['mail']['fields'][$name] = $def;
 		}
 		//* Labels. Set here rather than in an .lng file so that uninstalling the
 		//  extension never removes a file that belongs to the ISPConfig core.
 		$page_form->wordbook['erl_settings_txt'] = 'Ratelimit';
-		$page_form->wordbook['erl_enabled_txt'] = 'Ratelimit';
+		$page_form->wordbook['erl_out_enabled_txt'] = 'Ratelimit outgoing';
+		$page_form->wordbook['erl_in_enabled_txt'] = 'Ratelimit incoming';
 		$page_form->wordbook['erl_out_limit_txt'] = 'Ratelimit Mails Out';
 		$page_form->wordbook['erl_out_interval_txt'] = 'Ratelimit Interval Out';
 		$page_form->wordbook['erl_in_limit_txt'] = 'Ratelimit Mails In';
 		$page_form->wordbook['erl_in_interval_txt'] = 'Ratelimit Interval In';
-		$page_form->wordbook['erl_default_user_out_txt'] = 'Ratelimit Mails Out per mailbox';
 		$page_form->wordbook['erl_limit_error_regex'] = 'Please enter a number.';
 		$page_form->wordbook['erl_note_out_txt'] = 'Maximum messages an authenticated mailbox may send within the interval. 0 disables the outgoing limit.';
 		$page_form->wordbook['erl_note_in_txt'] = 'Maximum messages a mailbox may receive within the interval. 0 disables the incoming limit.';
-		$page_form->wordbook['erl_note_default_user_txt'] = 'Default per-mailbox outgoing limit for mailboxes that inherit (0 = inherit the server limit).';
 
 
 		//* the template needs the labels

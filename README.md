@@ -26,9 +26,14 @@ as a self-contained addon.
 
 Limits are set in four places, each overriding the one above:
 
-1. **Server wide** — `System > Server Config > Mail > Ratelimit`
-2. **Per domain** — `Mail > Domain` → *Ratelimit* panel
-3. **Per mailbox** — `Mail > Email Mailbox` → *Ratelimit* panel
+1. **Server wide** — `System > Server Config > Mail`, two independent switches
+   *Ratelimit outgoing* and *Ratelimit incoming*, each with its own
+   *Ratelimit Mails Out/In* and *Ratelimit Interval Out/In*. These are the
+   defaults a domain inherits.
+2. **Per domain** — `Mail > Domain` → *Ratelimit* panel: *Global Limits* (use the
+   server values), *Unlimited* or *Custom Limits* for this domain only.
+3. **Per mailbox** — `Mail > Email Mailbox` → *Ratelimit* panel: *Use Domain
+   Limits* (default), *Unlimited* or *Custom Limits*.
 4. **Explicit external limits** — `Mail > Ratelimit` (a domain like `@example.com`
    or a single address like `user@example.com`, direction *Incoming*, *Outgoing*
    or *In and Out*)
@@ -206,7 +211,7 @@ only when everything succeeded, and it is safe to run twice.
 
 | Symptom | Check |
 |---------|-------|
-| Nothing is limited | `erl_enabled` in `System > Server Config > Mail` must be **on**, and either the relevant server limit **> 0** or a per-mailbox/external rule must exist. Then check both `dofile()` lines are in `/etc/rspamd/rspamd.local.lua` and `cat /etc/rspamd/email_ratelimit.conf.lua` shows `enabled = true`. |
+| Nothing is limited | *Ratelimit outgoing* / *Ratelimit incoming* in `System > Server Config > Mail` must be **on** for the direction you care about, and the matching limit must be **> 0** (or a per-domain/mailbox/external rule must exist). Then check both `dofile()` lines are in `/etc/rspamd/rspamd.local.lua` and `cat /etc/rspamd/email_ratelimit.conf.lua` shows `enabled = true`. |
 | No `erl ok` / `erl DEFER` lines in the log at all | The module is not loaded. `grep email_ratelimit /etc/rspamd/rspamd.local.lua` must show two `dofile()` lines; `rspamadm configtest` must be clean. Re-run `php install/deploy.php update`. |
 | `redis error … allowing mail` on every message | Rspamd cannot run the check script. Verify Redis is reachable and that the module deployed by `update` is the current one (`erl ok` lines should appear within one message). |
 | Config on disk is stale | The cron job (`100-email_ratelimit.inc.php`, every 10 min) repairs a config that drifted while the server process was down. `/var/log/ispconfig/ispconfig.log` shows `email_ratelimit: configuration regenerated`. |
@@ -216,7 +221,7 @@ only when everything succeeded, and it is safe to run twice.
 | Everything is allowed (fail open) | Redis is unreachable. `redis-cli ping`. This is deliberate — mail is never blocked by a counter outage. |
 | Panel shows no Ratelimit panel | The theme template override or the `plugin.d` file did not deploy. Re-run `php install/deploy.php update` and check `/usr/local/ispconfig/interface/web/mail/lib/plugin.d/`. If you use a theme other than `default`, copy the three files from `themes/default/templates/{mail,admin}/` into your theme's `templates/` directory. |
 | Ratelimit block is there but the button and fields are empty | The session was opened before the plugin files were deployed (the panel caches plugins at login) or the page was opened in the wrong module context. Log out of the panel and back in, then open the form through the menu (`Mail > Domain`, not a bookmark). |
-| A setting saved in the panel has no effect | Server wide values live in the `[mail]` section of the server config INI (`SELECT config FROM server`), not in SQL columns. Check `erl_enabled=y` there and that `cat /etc/rspamd/email_ratelimit.conf.lua` shows `enabled = true` after the next server run. |
+| A setting saved in the panel has no effect | Server wide values live in the `[mail]` section of the server config INI (`SELECT config FROM server`), not in SQL columns. Check `erl_out_enabled=y` / `erl_in_enabled=y` there and that `cat /etc/rspamd/email_ratelimit.conf.lua` shows `enabled = true` after the next server run. `update` migrates the old single `erl_enabled` switch to the two new ones. |
 
 ## How it works
 
