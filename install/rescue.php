@@ -30,6 +30,9 @@ if(PHP_SAPI !== 'cli') {
 
 require_once __DIR__ . '/rspamd_block.inc.php';
 
+//* shared MySQL superuser helper (optional, rescue must stay usable alone)
+if(is_file(__DIR__ . '/root_client.inc.php')) require_once __DIR__ . '/root_client.inc.php';
+
 define('ERL_RESCUE_EXT', 'email_ratelimit');
 
 //* ---------------------------------------------------------------- file lists
@@ -259,6 +262,12 @@ function erl_rescue_connect($conf, $prefix, &$log) {
  * true = ok, false = failed, null = no client installed.
  */
 function erl_rescue_cli_sql($sql, $dbname) {
+	//* The shared helper knows where ISPConfig keeps the MySQL superuser
+	//  credentials (mysql_clientdb.conf, debian.cnf, ...).
+	if(function_exists('erl_root_sql')) {
+		return erl_root_sql($sql, $dbname) ? true : false;
+	}
+
 	$bin = null;
 	foreach(array('/usr/bin/mariadb', '/usr/bin/mysql', '/usr/local/bin/mysql') as $b) {
 		if(is_executable($b)) {
