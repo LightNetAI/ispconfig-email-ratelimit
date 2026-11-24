@@ -267,9 +267,12 @@ echo "done: $action\n\n";
 
 if($action === 'install' || $action === 'enable') {
 	echo "Next steps:\n";
-	echo "  1. System > Server Config > Mail: enable 'Ratelimit' and set the limits.\n";
-	echo "  2. Mail > Domain / Mail > Email Mailbox: optional per-domain / per-mailbox limits.\n";
-	echo "  3. Mail > Ratelimit: optional limits for external addresses or domains.\n";
-	echo "  4. Watch it work: redis-cli --scan --pattern 'erl:*'\n";
+	echo "  1. Log out of the panel and back in: it builds the plugin cache at login,\n";
+	echo "     so an open session keeps showing the old forms.\n";
+	echo "  2. System > Server Config > Mail: tick 'Ratelimit outgoing' and/or\n";
+	echo "     'Ratelimit incoming' and set the limits (they are inline in the tab).\n";
+	echo "  3. Mail > Domain / Mail > Email Mailbox: optional per-domain / per-mailbox limits.\n";
+	echo "  4. Mail > Ratelimit: optional limits for external addresses or domains.\n";
+	echo "  5. Watch it work: redis-cli --scan --pattern 'erl:*'\n";
 	echo "                    tail -f /var/log/rspamd/rspamd.log | grep erl\n\n";
 }
