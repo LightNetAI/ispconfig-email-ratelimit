@@ -335,6 +335,14 @@ class email_ratelimit_installer extends extension_installer_base {
 					}
 				}
 
+				// A .bak written by an older installer can hold one of our own
+				// earlier files; restoring that on uninstall would resurrect a
+				// stale plugin (and break the panel), so drop such backups.
+				$bak = $abs . '.email_ratelimit.bak';
+				if(file_exists($bak) && $this->looks_like_ours($bak)) {
+					if(@unlink($bak)) $this->messages[] = "removed stale backup $target.email_ratelimit.bak";
+				}
+
 				if(file_put_contents($abs, $content) === false) {
 					$this->messages[] = "ERROR: cannot copy $target";
 					return false;

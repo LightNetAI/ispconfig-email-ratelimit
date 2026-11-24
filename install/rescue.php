@@ -164,16 +164,38 @@ function erl_rescue_remove_file($ispconfig_dir, $target, $dry, &$log) {
 	$bak = $abs . '.email_ratelimit.bak';
 
 	if(file_exists($bak)) {
-		if($dry) {
-			$log[] = "[dry] would restore $target from its backup";
-			return true;
+		$bak_content = (string)@file_get_contents($bak);
+		$bak_is_ours = (strpos($bak_content, 'email_ratelimit') !== false
+			|| strpos($bak_content, 'erl_limit_mode') !== false
+			|| strpos($bak_content, 'erl_out_enabled') !== false
+			|| strpos($bak_content, 'toggle-ratelimit') !== false);
+
+		if($bak_is_ours) {
+			// An installer before v1.1.0 could back up one of our own files. That
+			// backup is not an original and must never be restored (it would put a
+			// stale plugin back and break the panel again).
+			if($dry) {
+				$log[] = "[dry] would drop the stale backup of $target";
+				return true;
+			}
+			@unlink($bak);
+			$log[] = "dropped the stale backup of $target";
+
+			// A theme template is the live panel file: dropping the live copy too
+			// would leave the tab without any markup, so leave it in place.
+			if(strpos('/' . $target, '/themes/') !== false) return true;
+		} else {
+			if($dry) {
+				$log[] = "[dry] would restore $target from its backup";
+				return true;
+			}
+			if(@rename($bak, $abs)) {
+				$log[] = "restored $target from backup";
+				return true;
+			}
+			$log[] = "ERROR: cannot restore $target from backup";
+			return false;
 		}
-		if(@rename($bak, $abs)) {
-			$log[] = "restored $target from backup";
-			return true;
-		}
-		$log[] = "ERROR: cannot restore $target from backup";
-		return false;
 	}
 
 	if(!is_link($abs) && !is_file($abs)) return true;
