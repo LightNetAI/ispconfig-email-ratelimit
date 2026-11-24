@@ -223,7 +223,7 @@ switch($action) {
 				if(preg_match('/^upd_(\d{4})_/', $f, $m)) $version = max($version, intval($m[1]));
 			}
 		}
-		file_put_contents($ispconfig_dir . '/extensions/' . $extension_name . '/dbversion', (string)$version);
+		file_put_contents($installer->extension_dir() . '/dbversion', (string)$version);
 		erl_say("schema version = $version");
 		break;
 

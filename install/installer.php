@@ -178,14 +178,33 @@ class email_ratelimit_installer extends extension_installer_base {
 	 * Parse install/file.list.
 	 * Returns array of array(action, source, target) or false on a bad line.
 	 */
+	/**
+	 * Directory this extension really lives in.
+	 *
+	 * The core convention is extensions/<name>, but the admin chooses the folder
+	 * name: this very install runs from extensions/email-rate-limit, so looking
+	 * up the conventional path would report "no file list" after the database
+	 * work had already been done.
+	 */
+	public function extension_dir() {
+		$here = dirname(__DIR__);
+		if(is_file($here . '/install/file.list')) return $here;
+
+		$conventional = $this->extension_basedir . '/' . $this->name;
+		if(is_file($conventional . '/install/file.list')) return $conventional;
+
+		return $here;
+	}
+
 	private function read_file_list() {
-		$path = $this->extension_basedir . '/' . $this->name . '/install/file.list';
+		$ext_dir = $this->extension_dir();
+		$path = $ext_dir . '/install/file.list';
 		if(!file_exists($path)) {
 			$this->messages[] = "ERROR: no file list at $path";
 			return false;
 		}
 
-		$ext_dir = realpath($this->extension_basedir . '/' . $this->name);
+		$ext_dir = realpath($ext_dir);
 		$out = array();
 
 		foreach(file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {

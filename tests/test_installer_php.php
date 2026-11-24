@@ -74,6 +74,13 @@ require $repo . '/install/installer.php';
 
 $rc = new ReflectionClass('email_ratelimit_installer');
 $inst = $rc->newInstance();
+
+$dir_m = $rc->getMethod('extension_dir');
+$dir_m->setAccessible(true);
+check('extension dir follows the folder it runs from', realpath($dir_m->invoke($inst)) === realpath($repo));
+$fl_m = $rc->getMethod('read_file_list');
+$fl_m->setAccessible(true);
+check('file.list found even when the folder is not named email_ratelimit', is_array($fl_m->invoke($inst)));
 $block_m = $rc->getMethod('rspamd_block');
 $block_m->setAccessible(true);
 $strip_m = $rc->getMethod('strip_rspamd_block');
